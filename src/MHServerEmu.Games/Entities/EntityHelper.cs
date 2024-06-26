@@ -1,4 +1,5 @@
-﻿using MHServerEmu.Core.Logging;
+﻿using MHServerEmu.Core.Extensions;
+using MHServerEmu.Core.Logging;
 using MHServerEmu.Core.VectorMath;
 using MHServerEmu.Games.Entities.Avatars;
 using MHServerEmu.Games.Entities.Inventories;
@@ -15,7 +16,7 @@ namespace MHServerEmu.Games.Entities
     public static class EntityHelper
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
-
+        
         public static Agent CrateOrb(PrototypeId orbProto, Vector3 position, Region region)
         {
             var settings = new EntitySettings
@@ -33,43 +34,6 @@ namespace MHServerEmu.Games.Entities
             var game = region.Game;
             Agent orb = (Agent)game.EntityManager.CreateEntity(settings);
             return orb;
-        }
-
-        public static Agent CreatePet(SummonPowerPrototype powerPet, Vector3 position, Region region, Player player) // Test funciton
-        {
-
-            PrototypeId petRef = powerPet.SummonEntityContexts[0].SummonEntity;
-            int level = 60;
-            //ulong masterDbGuid = player.DatabaseUniqueId;
-            var avatar = player.CurrentAvatar;
-            AssetId creatorAsset = avatar.WorldEntityPrototype.UnrealClass;
-            PrototypeId allianceRef = avatar.Alliance.DataRef;
-            AgentPrototype petAgentProto = GameDatabase.GetPrototype<AgentPrototype>(petRef);
-            var settings = new EntitySettings
-            {
-                EntityRef = petRef,
-                Position = position,
-                Orientation = new(3.14f, 0.0f, 0.0f),
-                RegionId = region.Id,
-                Properties = new PropertyCollection
-                {
-                    [PropertyEnum.NoMissileCollide] = true, // EvalOnCreate
-                    [PropertyEnum.CreatorEntityAssetRefBase] = creatorAsset,
-                    [PropertyEnum.CreatorEntityAssetRefCurrent] = creatorAsset,
-                    [PropertyEnum.CreatorPowerPrototype] = powerPet.DataRef,
-                    [PropertyEnum.AIStartsEnabled] = true,
-                    [PropertyEnum.MovementSpeedRate] = 1.0f,
-                    // [PropertyEnum.AIMasterAvatarDbGuid] = masterDbGuid,
-                    // [PropertyEnum.AIMasterAvatar] = true,
-                    [PropertyEnum.AllianceOverride] = allianceRef,
-                    [PropertyEnum.CharacterLevel] = level,
-                    [PropertyEnum.CombatLevel] = level,
-                    [PropertyEnum.Rank] = petAgentProto.Rank, // InvulnerablePet
-                }
-            };
-            var game = region.Game;
-            var pet = (Agent)game.EntityManager.CreateEntity(settings);
-            return pet;
         }
 
         public static void SummonEntityFromPower(Avatar avatar, PrototypeId powerPrototypeId)
@@ -162,6 +126,49 @@ namespace MHServerEmu.Games.Entities
             pet.Destroy();
             avatar.Properties[PropertyEnum.PowerToggleOn, powerPrototypeId] = false;
             avatar.Properties[PropertyEnum.PowerSummonedEntityCount, powerPrototypeId] = summonedInventory.Count;
+        }
+
+        public static void SummonEntityFromPowerPrototype(Avatar avatar, SummonPowerPrototype summonPowerProto)
+        {
+            AssetId creatorAsset = avatar.GetEntityWorldAsset();
+            PrototypeId allianceRef = avatar.Alliance.DataRef;
+
+            if (summonPowerProto.SummonEntityContexts.IsNullOrEmpty()) return;
+            PrototypeId summonerRef = summonPowerProto.SummonEntityContexts[0].SummonEntity;
+            var summonerProto = GameDatabase.GetPrototype<AgentPrototype>(summonerRef);
+
+            var settings = new EntitySettings
+            {
+                EntityRef = summonerRef,
+                Properties = new PropertyCollection
+                {
+                    [PropertyEnum.NoMissileCollide] = true, // EvalOnCreate
+                    [PropertyEnum.CreatorEntityAssetRefBase] = creatorAsset,
+                    [PropertyEnum.CreatorEntityAssetRefCurrent] = creatorAsset,
+                    [PropertyEnum.CreatorPowerPrototype] = summonPowerProto.DataRef,
+                    [PropertyEnum.SummonedByPower] = true,
+                    [PropertyEnum.AllianceOverride] = allianceRef,
+                    [PropertyEnum.Rank] = summonerProto.Rank,
+                }
+            };
+
+            Agent summoner = (Agent)avatar.Game.EntityManager.CreateEntity(settings);
+            summoner.EnterWorld(avatar.Region, summoner.GetPositionNearAvatar(avatar), avatar.RegionLocation.Orientation);
+
+            if (summonPowerProto.ActionsTriggeredOnPowerEvent.HasValue())
+                summoner.AIController.Blackboard.PropertyCollection[PropertyEnum.AIAssistedEntityID] = avatar.Id;
+            summoner.Properties[PropertyEnum.PowerUserOverrideID] = avatar.Id;
+
+            Inventory summonedInventory = avatar.GetInventory(InventoryConvenienceLabel.Summoned);
+            summoner.ChangeInventoryLocation(summonedInventory);
+        }
+
+        public static void DestroySummonerFromPowerPrototype(Avatar avatar, SummonPowerPrototype summonPowerProto)
+        {
+            var summonerProto = summonPowerProto.GetSummonEntity(0, avatar.OriginalWorldAsset);
+            Inventory summonedInventory = avatar.GetInventory(InventoryConvenienceLabel.Summoned);
+            Agent summoner = summonedInventory.GetMatchingEntity(summonerProto.DataRef) as Agent;
+            summoner?.Destroy();
         }
 
         public static void SetUpHardcodedEntities(Region region)
