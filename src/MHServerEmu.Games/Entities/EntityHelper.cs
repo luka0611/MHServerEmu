@@ -15,7 +15,7 @@ namespace MHServerEmu.Games.Entities
     public static class EntityHelper
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
-        
+
         public static Agent CrateOrb(PrototypeId orbProto, Vector3 position, Region region)
         {
             var settings = new EntitySettings
@@ -59,8 +59,8 @@ namespace MHServerEmu.Games.Entities
                     [PropertyEnum.CreatorPowerPrototype] = powerPet.DataRef,
                     [PropertyEnum.AIStartsEnabled] = true,
                     [PropertyEnum.MovementSpeedRate] = 1.0f,
-                   // [PropertyEnum.AIMasterAvatarDbGuid] = masterDbGuid,
-                   // [PropertyEnum.AIMasterAvatar] = true,
+                    // [PropertyEnum.AIMasterAvatarDbGuid] = masterDbGuid,
+                    // [PropertyEnum.AIMasterAvatar] = true,
                     [PropertyEnum.AllianceOverride] = allianceRef,
                     [PropertyEnum.CharacterLevel] = level,
                     [PropertyEnum.CombatLevel] = level,
@@ -74,11 +74,39 @@ namespace MHServerEmu.Games.Entities
 
         public static void SummonEntityFromPower(Avatar avatar, PrototypeId powerPrototypeId)
         {
-            int level = 60;
+            if (avatar.HasPowerInPowerCollection(powerPrototypeId) == false)
+                avatar.AssignPower(powerPrototypeId, new(0, avatar.CharacterLevel, avatar.CombatLevel));
+
+            PowerPrototype powerPrototype = avatar.GetPower(powerPrototypeId).Prototype;
+
+            if (powerPrototype.ActionsTriggeredOnPowerEvent != null && powerPrototype.ActionsTriggeredOnPowerEvent.Any(k => k.Power != PrototypeId.Invalid))
+            {
+                foreach (var action in powerPrototype.ActionsTriggeredOnPowerEvent)
+                {
+                    if (action.Power == PrototypeId.Invalid)
+                        continue;
+
+                    if (avatar.HasPowerInPowerCollection(action.Power) == false)
+                        avatar.AssignPower(action.Power, new(0, avatar.CharacterLevel, avatar.CombatLevel));
+
+                    Summon(avatar, avatar.GetPower(action.Power).Prototype);
+                }
+            }
+            else
+            {
+                Summon(avatar, powerPrototype);
+            }
+        }
+
+        private static void Summon(Avatar avatar, PowerPrototype powerPrototype)
+        {
             AssetId creatorAsset = avatar.GetEntityWorldAsset();
             PrototypeId allianceRef = avatar.Alliance.DataRef;
+            int level = 60;
 
-            SummonPowerPrototype summonPowerPrototype = avatar.GetPower(powerPrototypeId).Prototype as SummonPowerPrototype;
+            SummonPowerPrototype summonPowerPrototype = powerPrototype as SummonPowerPrototype;
+
+            if (summonPowerPrototype == null) return;
 
             PrototypeId petRef = summonPowerPrototype.SummonEntityContexts[0].SummonEntity;
             AgentPrototype petAgentProto = GameDatabase.GetPrototype<AgentPrototype>(petRef);
@@ -108,14 +136,16 @@ namespace MHServerEmu.Games.Entities
             Agent pet = (Agent)avatar.Region.Game.EntityManager.CreateEntity(settings);
             pet.EnterWorld(avatar.RegionLocation.Region, pet.GetPositionNearAvatar(avatar), avatar.RegionLocation.Orientation);
 
-            pet.AIController.Blackboard.PropertyCollection[PropertyEnum.AIAssistedEntityID] = avatar.Id;
+            if (pet.AIController != null)
+                pet.AIController.Blackboard.PropertyCollection[PropertyEnum.AIAssistedEntityID] = avatar.Id;
+
             pet.Properties[PropertyEnum.PowerUserOverrideID] = avatar.Id;
 
             Inventory summonedInventory = avatar.GetInventory(InventoryConvenienceLabel.Summoned);
             pet.ChangeInventoryLocation(summonedInventory);
 
-            avatar.Properties[PropertyEnum.PowerToggleOn, powerPrototypeId] = true;
-            avatar.Properties[PropertyEnum.PowerSummonedEntityCount, powerPrototypeId]++;
+            avatar.Properties[PropertyEnum.PowerToggleOn, powerPrototype.DataRef] = true; //powerPrototypeId
+            avatar.Properties[PropertyEnum.PowerSummonedEntityCount, powerPrototype.DataRef]++;
         }
 
         public static void DestroySummonFromPower(Avatar avatar, PrototypeId powerPrototypeId)

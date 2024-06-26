@@ -92,13 +92,14 @@ namespace MHServerEmu.Games.Powers
             activatePowerArchive.Initialize(tryActivatePower, avatar.RegionLocation.Position);
             _game.NetworkManager.SendMessageToInterested(activatePowerArchive.ToProtobuf(), avatar, AOINetworkPolicyValues.AOIChannelProximity, true);
 
+            Power power = avatar.GetPower(powerPrototypeId);
+
             if (powerPrototypePath.Contains("ThrowablePowers/"))
             {
                 Logger.Trace($"AddEvent EndThrowing for {powerPrototypePath}");
 
                 bool isCancelling = powerPrototypePath.Contains("CancelPower");
 
-                Power power = avatar.GetPower(powerPrototypeId);
                 if (power == null) Logger.Warn("OnTryActivatePower(): power == null");
 
                 EventPointer<OLD_EndThrowingEvent> endThrowingPointer = new();
@@ -135,7 +136,7 @@ namespace MHServerEmu.Games.Powers
             else if (tryActivatePower.PowerPrototypeId == (ulong)PowerPrototypes.Items.BowlingBallItemPower)
             {
                 Inventory inventory = playerConnection.Player.GetInventory(InventoryConvenienceLabel.General);
-                
+
                 Entity bowlingBall = inventory.GetMatchingEntity((PrototypeId)7835010736274089329); // BowlingBallItem
                 if (bowlingBall == null) return false;
 
@@ -144,7 +145,14 @@ namespace MHServerEmu.Games.Powers
                 else
                     bowlingBall.Destroy();
             }
-            
+            else if (powerPrototypePath.Contains("/Iceman/IceGolem.prototype"))
+            {
+                if (avatar.Properties[PropertyEnum.PowerToggleOn, powerPrototypeId])
+                    EntityHelper.DestroySummonFromPower(avatar, powerPrototypeId);
+                else
+                    EntityHelper.SummonEntityFromPower(avatar, powerPrototypeId);
+            }
+
             if (tryActivatePower.PowerPrototypeId == (ulong)avatar.TeamUpPowerRef)
             {
                 avatar.SummonTeamUpAgent();
@@ -169,7 +177,7 @@ namespace MHServerEmu.Games.Powers
         private void TestHit(PlayerConnection playerConnection, ulong entityId, int damage)
         {
             if (damage == 0) return;
-            
+
             var entity = playerConnection.Game.EntityManager.GetEntity<WorldEntity>(entityId);
             if (entity == null) return;
 
@@ -194,7 +202,7 @@ namespace MHServerEmu.Games.Powers
             else if (entity.WorldEntityPrototype is AgentPrototype agentProto && agentProto.Locomotion.Immobile == false)
             {
                 entity.ChangeRegionPosition(null, new(Vector3.AngleYaw(entity.RegionLocation.Position, playerConnection.LastPosition), 0f, 0f));
-            }       
+            }
         }
 
         private bool OnPowerRelease(PlayerConnection playerConnection, MailboxMessage message)
