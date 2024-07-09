@@ -16,7 +16,7 @@ namespace MHServerEmu.Games.Entities
     public static class EntityHelper
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
-        public static readonly bool DebugOrb = false;
+        public static readonly bool DebugOrb = true;
 
         public enum TestOrb : ulong
         {

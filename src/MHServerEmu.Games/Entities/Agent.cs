@@ -630,7 +630,7 @@ namespace MHServerEmu.Games.Entities
                                                   // ActivePowerRef = settings.PowerPrototype
 
             // AI
-            // if (TestAI() == false) return;
+            if (TestAI() == false) return;
 
             if (AIController != null)
             {
