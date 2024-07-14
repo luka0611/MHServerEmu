@@ -17,10 +17,9 @@ using MHServerEmu.Games.Events.LegacyImplementations;
 using MHServerEmu.Games.Events.Templates;
 using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.GameData.Prototypes;
-using MHServerEmu.Games.Generators;
-using MHServerEmu.Games.Generators.Population;
 using MHServerEmu.Games.Navi;
 using MHServerEmu.Games.Network;
+using MHServerEmu.Games.Populations;
 using MHServerEmu.Games.Powers;
 using MHServerEmu.Games.Properties;
 using MHServerEmu.Games.Regions;
@@ -64,12 +63,11 @@ namespace MHServerEmu.Games.Entities
         NotChanged,
     }
 
-    public class WorldEntity : Entity
+    public partial class WorldEntity : Entity
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
 
-        private EventPointer<TEMP_SendActivatePowerMessageEvent> _sendActivatePowerMessageEvent = new();
-        private EventPointer<ScheduledExitWorldEvent> _exitWorldEvent = new();
+        private readonly EventPointer<ScheduledExitWorldEvent> _exitWorldEvent = new();
 
         private AlliancePrototype _allianceProto;
         private Transform3 _transform = Transform3.Identity();
@@ -146,7 +144,7 @@ namespace MHServerEmu.Games.Entities
             var proto = WorldEntityPrototype;
 
             if (settings.IgnoreNavi)
-                _flags |= EntityFlags.IgnoreNavi;
+                SetFlag(EntityFlags.IgnoreNavi, true);
 
             ShouldSnapToFloorOnSpawn = settings.OptionFlags.HasFlag(EntitySettingsOptionFlags.HasOverrideSnapToFloor)
                 ? settings.OptionFlags.HasFlag(EntitySettingsOptionFlags.OverrideSnapToFloorValue)
@@ -158,13 +156,6 @@ namespace MHServerEmu.Games.Entities
 
             // Old
             Properties[PropertyEnum.VariationSeed] = Game.Random.Next(1, 10000);
-
-            // HACK: Override base health to make things more reasonable with the current damage implementation
-            /*
-            float healthBaseOverride = EntityHelper.GetHealthForWorldEntity(this);
-            if (healthBaseOverride > 0f)
-                Properties[PropertyEnum.Health] = Properties[PropertyEnum.HealthMaxOther];
-            */
 
             Properties[PropertyEnum.CharacterLevel] = 60;
             Properties[PropertyEnum.CombatLevel] = 60;
@@ -216,8 +207,16 @@ namespace MHServerEmu.Games.Entities
         public virtual void OnKilled(WorldEntity killer, KillFlags killFlags, WorldEntity directKiller)
         {
             // HACK: LOOT
-            if (this is Agent agent && agent is not Missile)
-                Game.LootGenerator.DropRandomLoot(agent);
+            if (this is Agent agent && agent is not Missile && agent is not Avatar && agent.IsTeamUpAgent == false)
+            {
+                foreach (ulong playerId in InterestReferences.PlayerIds)
+                {
+                    Player player = Game.EntityManager.GetEntity<Player>(playerId);
+                    if (player == null) continue;
+
+                    Game.LootManager.DropRandomLoot(this, player);
+                }
+            }
 
             // HACK: Schedule respawn using SpawnSpec
             if (SpawnSpec != null)
@@ -228,8 +227,7 @@ namespace MHServerEmu.Games.Entities
                 eventPointer.Get().Initialize(SpawnSpec);
             }
 
-            // HACK?: Set death state
-            _flags |= EntityFlags.IsDead;
+            // Set death state properties
             Properties[PropertyEnum.IsDead] = true;
             Properties[PropertyEnum.NoEntityCollide] = true;
 
@@ -241,6 +239,8 @@ namespace MHServerEmu.Games.Entities
                 .Build();
 
             Game.NetworkManager.SendMessageToInterested(killMessage, this, AOINetworkPolicyValues.AOIChannelProximity);
+
+            EntityActionComponent?.CancelAll();
 
             // Schedule destruction
             int removeFromWorldTimerMS = WorldEntityPrototype.RemoveFromWorldTimerMS;
@@ -284,19 +284,11 @@ namespace MHServerEmu.Games.Entities
             ExitWorld();
             if (IsDestroyed == false)
             {
-                // CancelExitWorldEvent();
+                CancelExitWorldEvent();
                 // CancelKillEvent();
                 CancelDestroyEvent();
                 base.Destroy();
             }
-        }
-
-        public override bool ScheduleDestroyEvent(TimeSpan delay)
-        {
-            if (IsDestroyProtectedEntity)
-                return Logger.WarnReturn(false, $"ScheduleDestroyEvent(): Trying to schedule destruction of a destroy-protected entity {this}");
-
-            return base.ScheduleDestroyEvent(delay);
         }
 
         #region World and Positioning
@@ -355,6 +347,10 @@ namespace MHServerEmu.Games.Entities
 
             // Simulate if the prototype is flagged as always simulated
             if (WorldEntityPrototype?.AlwaysSimulated == true)
+                return SetSimulated(true);
+
+            // Fix for team-up AI getting disabled when they get stuck and you run away too far from them
+            if (IsTeamUpAgent)
                 return SetSimulated(true);
 
             // Simulate is there are any player interested in this world entity
@@ -531,17 +527,6 @@ namespace MHServerEmu.Games.Entities
             return false;
         }
 
-        public void ScheduleExitWorldEvent(TimeSpan time)
-        {
-            if (_exitWorldEvent.IsValid)
-            {
-                if (_exitWorldEvent.Get().FireTime > Game.CurrentTime + time)
-                    Game.GameEventScheduler.RescheduleEvent(_exitWorldEvent, time);
-            }
-            else
-                ScheduleEntityEvent(_exitWorldEvent, time);
-        }
-
         public Vector3 GetVectorFrom(WorldEntity other)
         {
             if (other == null) return Vector3.Zero;
@@ -570,11 +555,6 @@ namespace MHServerEmu.Games.Entities
 
             if (oldLocation.Cell != newLocation.Cell)
                 OnCellChanged(oldLocation, newLocation, flags);
-        }
-
-        protected class ScheduledExitWorldEvent : CallMethodEvent<Entity>
-        {
-            protected override CallbackDelegate GetCallback() => (t) => (t as WorldEntity)?.ExitWorld();
         }
 
         #endregion
@@ -1118,22 +1098,33 @@ namespace MHServerEmu.Games.Entities
             NetMessagePowerResult powerResultMessage = ArchiveMessageBuilder.BuildPowerResultMessage(powerResults);
             Game.NetworkManager.SendMessageToInterested(powerResultMessage, this, AOINetworkPolicyValues.AOIChannelProximity);
 
-            // Do not apply damage to avatars and team-ups... yet
-            // Do this after sending the message so that the client can play hit effects anyway
-            if (this is Avatar || (this is Agent agent && agent.IsTeamUpAgent))
-                return true;
-
             // Apply the results to this entity
-            // NOTE: A lot more things should happen here, but for now we just apply damage and check death
-            int health = Properties[PropertyEnum.Health];
+            // TODO: More stuff
 
-            float totalDamage = powerResults.Properties[PropertyEnum.Damage, (int)DamageType.Physical];
-            totalDamage += powerResults.Properties[PropertyEnum.Damage, (int)DamageType.Energy];
-            totalDamage += powerResults.Properties[PropertyEnum.Damage, (int)DamageType.Mental];
+            // Calculate health difference based on all damage types and healing
+            // NOTE: Health can be > 2147483647, so we have to use 64-bit integers here to avoid overflows
+            long health = Properties[PropertyEnum.Health];
+            float healthDelta = 0f;
 
-            health = (int)Math.Max(health - totalDamage, 0);
+            if (powerResults.Flags.HasFlag(PowerResultFlags.InstantKill))
+            {
+                // INSTANT KILL
+                healthDelta -= health;
+            }
+            else
+            {
+                // Calculate damage delta normally
+                healthDelta -= powerResults.Properties[PropertyEnum.Damage, (int)DamageType.Physical];
+                healthDelta -= powerResults.Properties[PropertyEnum.Damage, (int)DamageType.Energy];
+                healthDelta -= powerResults.Properties[PropertyEnum.Damage, (int)DamageType.Mental];
+                healthDelta += powerResults.Properties[PropertyEnum.Healing];
+            }
 
-            // Kill
+            // Apply health delta
+            health += (long)MathF.Round(healthDelta);
+            health = Math.Clamp(health, Properties[PropertyEnum.HealthMin], Properties[PropertyEnum.HealthMaxOther]);
+
+            // Change health to the new value
             WorldEntity powerUser = Game.EntityManager.GetEntity<WorldEntity>(powerResults.PowerOwnerId);
 
             if (health <= 0)
@@ -1145,44 +1136,7 @@ namespace MHServerEmu.Games.Entities
                 Properties[PropertyEnum.Health] = health;
                 
                 if (totalDamage > 0f && this is Agent aiAgent) aiAgent.AITestOn();
-                // HACK: Rotate towards the power user
-                if (totalDamage > 0f && powerUser is Avatar && Locomotor != null)
-                {
-                    ChangeRegionPosition(null, new(Vector3.AngleYaw(RegionLocation.Position, powerUser.RegionLocation.Position), 0f, 0f));
-                }
             }
-
-            return true;
-        }
-
-        public bool TEMP_ScheduleSendActivatePowerMessage(PrototypeId powerProtoRef, TimeSpan timeOffset)
-        {
-            if (_sendActivatePowerMessageEvent.IsValid) return false;
-            ScheduleEntityEvent(_sendActivatePowerMessageEvent, timeOffset, powerProtoRef);
-            return true;
-        }
-
-        public bool TEMP_SendActivatePowerMessage(PrototypeId powerProtoRef)
-        {
-            if (IsInWorld == false) return false;
-
-            Logger.Trace($"Activating {GameDatabase.GetPrototypeName(powerProtoRef)} for {this}");
-
-            OLD_ActivatePowerArchive activatePower = new()
-            {
-                Flags = ActivatePowerMessageFlags.TargetIsUser | ActivatePowerMessageFlags.HasTargetPosition |
-                ActivatePowerMessageFlags.TargetPositionIsUserPosition | ActivatePowerMessageFlags.HasFXRandomSeed |
-                ActivatePowerMessageFlags.HasPowerRandomSeed,
-
-                PowerPrototypeRef = powerProtoRef,
-                UserEntityId = Id,
-                TargetPosition = RegionLocation.Position,
-                FXRandomSeed = (uint)Game.Random.Next(),
-                PowerRandomSeed = (uint)Game.Random.Next()
-            };
-
-            var activatePowerMessage = NetMessageActivatePower.CreateBuilder().SetArchiveData(activatePower.ToByteString()).Build();
-            Game.NetworkManager.SendMessageToInterested(activatePowerMessage, this, AOINetworkPolicyValues.AOIChannelProximity);
 
             return true;
         }
@@ -1222,11 +1176,6 @@ namespace MHServerEmu.Games.Entities
                 || IsInWorld == false || IsSimulated == false
                 || IsDormant || IsUnaffectable || IsHotspot) return false;
             return true;
-        }
-
-        protected class TEMP_SendActivatePowerMessageEvent : CallMethodEventParam1<Entity, PrototypeId>
-        {
-            protected override CallbackDelegate GetCallback() => (t, p1) => ((WorldEntity)t).TEMP_SendActivatePowerMessage(p1);
         }
 
         #endregion
@@ -1602,7 +1551,7 @@ namespace MHServerEmu.Games.Entities
                     break;
 
                 case PropertyEnum.NoEntityCollide:
-                    _flags |= EntityFlags.NoCollide;
+                    SetFlag(EntityFlags.NoCollide, true);
                     // EnableNavigationInfluence DisableNavigationInfluence
                     break;
             }
@@ -1731,6 +1680,8 @@ namespace MHServerEmu.Games.Entities
             throw new NotImplementedException();
         }
 
+        #region Actions
+
         public void RegisterActions(List<EntitySelectorActionPrototype> actions)
         {
             if (actions == null) return;
@@ -1738,7 +1689,7 @@ namespace MHServerEmu.Games.Entities
             EntityActionComponent.Register(actions);
         }
 
-        public virtual void AppendStartAction(PrototypeId actionsTarget) { }
+        public virtual void AppendStartAction_OLD(PrototypeId actionsTarget) { }
 
         public ScriptRoleKeyEnum GetScriptRoleKey()
         {
@@ -1747,6 +1698,71 @@ namespace MHServerEmu.Games.Entities
             else
                 return (ScriptRoleKeyEnum)(uint)Properties[PropertyEnum.ScriptRoleKey];
         }
+
+        public bool CanEntityActionTrigger(EntitySelectorActionEventType eventType)
+        {
+            if (EntityActionComponent != null)
+                return EntityActionComponent.CanTrigger(eventType);
+            return false;
+        }
+
+        public void TriggerEntityActionEvent(EntitySelectorActionEventType actionType)
+        {
+            if (EntityActionComponent != null)
+            {
+                // Logger.Trace($"TriggerEntityActionEvent {PrototypeName} {actionType}");
+                EntityActionComponent.Trigger(actionType);
+            }
+        }
+
+        public virtual bool ProcessEntityAction(EntitySelectorActionPrototype action)
+        {
+            if (IsControlledEntity || EntityActionComponent == null || IsInWorld == false) return false;
+
+            // TODO action.SpawnerTrigger
+
+            var aiOverride = action.PickAIOverride(Game.Random);
+            if (aiOverride != null)
+            {
+                var powerRef = aiOverride.Power;
+                if (powerRef != PrototypeId.Invalid)
+                {
+                    if (aiOverride.PowerRemove)
+                    {
+                        UnassignPower(powerRef);
+                        EntityActionComponent.PerformPowers.Remove(powerRef);
+                    }
+                    else
+                    {
+                        PowerIndexProperties indexProps = new(0, CharacterLevel, CombatLevel);
+                        AssignPower(powerRef, indexProps);
+
+                        PowerActivationSettings powerSettings = new(Id, Vector3.Zero, RegionLocation.Position);
+                        powerSettings.Flags |= PowerActivationSettingsFlags.NotifyOwner;
+                        var result = ActivatePower(powerRef, ref powerSettings);
+                        if (result == PowerUseResult.Success)
+                            EntityActionComponent.PerformPowers.Add(powerRef);
+                        else
+                            return Logger.WarnReturn(false, $"ProcessEntityAction ActivatePower [{powerRef}] = {result}");
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        public void ShowOverheadText(LocaleStringId idText, float duration)
+        {
+            var message = NetMessageShowOverheadText.CreateBuilder()
+                .SetIdAgent(Id)
+                .SetIdText((ulong)idText)
+                .SetDuration(duration)
+                .Build();
+
+            Game.NetworkManager.SendMessageToInterested(message, this, AOINetworkPolicyValues.AOIChannelProximity);
+        }
+
+        #endregion
 
         public bool HasKeyword(PrototypeId keyword)
         {
@@ -1801,19 +1817,6 @@ namespace MHServerEmu.Games.Entities
             }
         }
 
-        public bool CanEntityActionTrigger(EntitySelectorActionEventType eventType)
-        {
-            Logger.Debug($"CanEntityActionTrigger {eventType}");
-            return false;
-            // throw new NotImplementedException();
-        }
-
-        public void TriggerEntityActionEvent(EntitySelectorActionEventType actionType)
-        {
-            Logger.Debug($"TriggerEntityActionEvent {actionType}");
-            // throw new NotImplementedException();
-        }
-
         protected override void BuildString(StringBuilder sb)
         {
             base.BuildString(sb);
@@ -1847,5 +1850,39 @@ namespace MHServerEmu.Games.Entities
             }
             return false;
         }
+
+        #region Scheduled Events
+
+        public override bool ScheduleDestroyEvent(TimeSpan delay)
+        {
+            if (IsDestroyProtectedEntity)
+                return Logger.WarnReturn(false, $"ScheduleDestroyEvent(): Trying to schedule destruction of a destroy-protected entity {this}");
+
+            return base.ScheduleDestroyEvent(delay);
+        }
+
+        public void ScheduleExitWorldEvent(TimeSpan time)
+        {
+            if (_exitWorldEvent.IsValid)
+            {
+                if (_exitWorldEvent.Get().FireTime > Game.CurrentTime + time)
+                    Game.GameEventScheduler.RescheduleEvent(_exitWorldEvent, time);
+            }
+            else
+                ScheduleEntityEvent(_exitWorldEvent, time);
+        }
+
+        public void CancelExitWorldEvent()
+        {
+            if (_exitWorldEvent.IsValid)
+                Game?.GameEventScheduler?.CancelEvent(_exitWorldEvent);
+        }
+
+        protected class ScheduledExitWorldEvent : CallMethodEvent<Entity>
+        {
+            protected override CallbackDelegate GetCallback() => (t) => (t as WorldEntity)?.ExitWorld();
+        }
+
+        #endregion
     }
 }

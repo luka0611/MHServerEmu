@@ -17,6 +17,7 @@ using MHServerEmu.Games.Events;
 using MHServerEmu.Games.Events.LegacyImplementations;
 using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.GameData.Prototypes;
+using MHServerEmu.Games.Network.Parsing;
 using MHServerEmu.Games.Powers;
 using MHServerEmu.Games.Properties;
 using MHServerEmu.Games.Regions;
@@ -38,8 +39,6 @@ namespace MHServerEmu.Games.Network
         private readonly FrontendClient _frontendClient;
         private readonly DBAccount _dbAccount;
         private readonly List<IMessage> _pendingMessageList = new();
-        private readonly IPowerMessageHandler _powerMessageHandler;
-        public bool IsUsingNewPowerMessageHandler { get => _powerMessageHandler is NewPowerMessageHandler; }    // temp
 
         private EventPointer<OLD_FinishCellLoadingEvent> _finishCellLoadingEvent = new();
         private EventPointer<OLD_PreInteractPowerEndEvent> _preInteractPowerEndEvent = new();
@@ -72,8 +71,6 @@ namespace MHServerEmu.Games.Network
             Game = game;
             _frontendClient = frontendClient;
             _dbAccount = _frontendClient.Session.Account;
-            //_powerMessageHandler = new OldPowerMessageHandler(this);
-            _powerMessageHandler = new NewPowerMessageHandler(this);      // Uncomment to switch to the new power implementation
 
             InitializeFromDBAccount();
         }
@@ -309,6 +306,12 @@ namespace MHServerEmu.Games.Network
                 case ClientToGameServerMessage.NetMessageUpdateAvatarState:                 OnUpdateAvatarState(message); break;                // 6
                 case ClientToGameServerMessage.NetMessageCellLoaded:                        OnCellLoaded(message); break;                       // 7
                 case ClientToGameServerMessage.NetMessageAdminCommand:                      OnAdminCommand(message); break;                     // 9
+                case ClientToGameServerMessage.NetMessageTryActivatePower:                  OnTryActivatePower(message); break;                 // 10
+                case ClientToGameServerMessage.NetMessagePowerRelease:                      OnPowerRelease(message); break;                     // 11
+                case ClientToGameServerMessage.NetMessageTryCancelPower:                    OnTryCancelPower(message); break;                   // 12
+                case ClientToGameServerMessage.NetMessageTryCancelActivePower:              OnTryCancelActivePower(message); break;             // 13
+                case ClientToGameServerMessage.NetMessageContinuousPowerUpdateToServer:     OnContinuousPowerUpdate(message); break;            // 14
+                case ClientToGameServerMessage.NetMessageCancelPendingAction:               OnCancelPendingAction(message); break;              // 15
                 case ClientToGameServerMessage.NetMessagePickupInteraction:                 OnPickupInteraction(message); break;                // 32
                 case ClientToGameServerMessage.NetMessageTryInventoryMove:                  OnTryInventoryMove(message); break;                 // 33
                 case ClientToGameServerMessage.NetMessageInventoryTrashItem:                OnInventoryTrashItem(message); break;               // 35
@@ -320,6 +323,7 @@ namespace MHServerEmu.Games.Network
                 case ClientToGameServerMessage.NetMessageAbilitySlotToAbilityBar:           OnAbilitySlotToAbilityBar(message); break;          // 46
                 case ClientToGameServerMessage.NetMessageAbilityUnslotFromAbilityBar:       OnAbilityUnslotFromAbilityBar(message); break;      // 47
                 case ClientToGameServerMessage.NetMessageAbilitySwapInAbilityBar:           OnAbilitySwapInAbilityBar(message); break;          // 48
+                case ClientToGameServerMessage.NetMessageRequestDeathRelease:               OnRequestDeathRelease(message); break;              // 52
                 case ClientToGameServerMessage.NetMessageReturnToHub:                       OnReturnToHub(message); break;                      // 55
                 case ClientToGameServerMessage.NetMessageNotifyLoadingScreenFinished:       OnNotifyLoadingScreenFinished(message); break;      // 86
                 case ClientToGameServerMessage.NetMessagePlayKismetSeqDone:                 OnPlayKismetSeqDone(message); break;                // 96
@@ -333,15 +337,6 @@ namespace MHServerEmu.Games.Network
                 case ClientToGameServerMessage.NetMessageOmegaBonusAllocationCommit:        OnOmegaBonusAllocationCommit(message); break;       // 132
                 case ClientToGameServerMessage.NetMessageAssignStolenPower:                 OnAssignStolenPower(message); break;                // 139
                 case ClientToGameServerMessage.NetMessageChangeCameraSettings:              OnChangeCameraSettings(message); break;             // 148
-
-                // Power Messages (NOTE: These will be merged with PlayerConnection in the future)
-                case ClientToGameServerMessage.NetMessageTryActivatePower:                                                                      // 10
-                case ClientToGameServerMessage.NetMessagePowerRelease:                                                                          // 11
-                case ClientToGameServerMessage.NetMessageTryCancelPower:                                                                        // 12
-                case ClientToGameServerMessage.NetMessageTryCancelActivePower:                                                                  // 13
-                case ClientToGameServerMessage.NetMessageContinuousPowerUpdateToServer:                                                         // 14
-                case ClientToGameServerMessage.NetMessageCancelPendingAction:                                                                   // 15
-                    _powerMessageHandler.ReceiveMessage(this, message); break;
 
                 // Grouping Manager
                 case ClientToGameServerMessage.NetMessageChat:                                                                                  // 64
@@ -511,6 +506,137 @@ namespace MHServerEmu.Games.Network
             return true;
         }
 
+
+        private bool OnTryActivatePower(MailboxMessage message) // 10
+        {
+            var tryActivatePower = message.As<NetMessageTryActivatePower>();
+            if (tryActivatePower == null) return Logger.WarnReturn(false, $"OnTryActivatePower(): Failed to retrieve message");
+
+            Avatar avatar = Player.GetActiveAvatarById(tryActivatePower.IdUserEntity);
+
+            // These checks fail due to lag, so no need to log
+            if (avatar == null) return true;
+            if (avatar.IsInWorld == false) return true;
+
+            PrototypeId powerProtoRef = (PrototypeId)tryActivatePower.PowerPrototypeId;
+
+            // Build settings from the protobuf
+            PowerActivationSettings settings = new(avatar.RegionLocation.Position);
+            settings.ApplyProtobuf(tryActivatePower);
+
+            avatar.ActivatePower(powerProtoRef, ref settings);
+
+            // HACK: Destroy the bowling ball item (remove this when we implement consumable items)
+            if (powerProtoRef == (PrototypeId)18211158277448213692)
+            {
+                Inventory inventory = Player.GetInventory(InventoryConvenienceLabel.General);
+
+                Entity bowlingBall = inventory.GetMatchingEntity((PrototypeId)7835010736274089329); // BowlingBallItem
+                if (bowlingBall == null) return false;
+
+                if (bowlingBall.Properties[PropertyEnum.InventoryStackCount] > 1)
+                    bowlingBall.Properties.AdjustProperty(-1, PropertyEnum.InventoryStackCount);
+                else
+                    bowlingBall.Destroy();
+            }
+
+            return true;
+        }
+
+        private bool OnPowerRelease(MailboxMessage message) // 11
+        {
+            var powerRelease = message.As<NetMessagePowerRelease>();
+            if (powerRelease == null) return Logger.WarnReturn(false, $"OnPowerRelease(): Failed to retrieve message");
+
+            Avatar avatar = Player.GetActiveAvatarById(powerRelease.IdUserEntity);
+
+            // These checks fail due to lag, so no need to log
+            if (avatar == null) return true;
+            if (avatar.IsInWorld == false) return true;
+
+            PrototypeId powerProtoRef = (PrototypeId)powerRelease.PowerPrototypeId;
+            Power power = avatar.GetPower(powerProtoRef);
+            if (power == null) return Logger.WarnReturn(false, "OnPowerRelease(): power == null");
+
+            PowerActivationSettings settings = new(avatar.RegionLocation.Position);
+
+            if (powerRelease.HasIdTargetEntity)
+                settings.TargetEntityId = powerRelease.IdTargetEntity;
+
+            if (powerRelease.HasTargetPosition)
+                settings.TargetPosition = new(powerRelease.TargetPosition);
+
+            power.ReleaseVariableActivation(ref settings);
+            return true;
+        }
+
+        private bool OnTryCancelPower(MailboxMessage message)   // 12
+        {
+            var tryCancelPower = message.As<NetMessageTryCancelPower>();
+            if (tryCancelPower == null) return Logger.WarnReturn(false, $"OnTryCancelPower(): Failed to retrieve message");
+
+            Avatar avatar = Player.GetActiveAvatarById(tryCancelPower.IdUserEntity);
+
+            // These checks fail due to lag, so no need to log
+            if (avatar == null) return true;
+            if (avatar.IsInWorld == false) return true;
+
+            PrototypeId powerProtoRef = (PrototypeId)tryCancelPower.PowerPrototypeId;
+            Power power = avatar.GetPower(powerProtoRef);
+            if (power == null) return Logger.WarnReturn(false, "OnTryCancelPower(): power == null");
+
+            EndPowerFlags flags = (EndPowerFlags)tryCancelPower.EndPowerFlags;
+            flags |= EndPowerFlags.ClientRequest;   // Always mark as a client request in case someone tries to cheat here
+            power.EndPower(flags);
+
+            return true;
+        }
+
+        private bool OnTryCancelActivePower(MailboxMessage message) // 13
+        {
+            var tryCancelActivePower = message.As<NetMessageTryCancelActivePower>();
+            if (tryCancelActivePower == null) return Logger.WarnReturn(false, $"OnTryCancelActivePower(): Failed to retrieve message");
+
+            Avatar avatar = Player.GetActiveAvatarById(tryCancelActivePower.IdUserEntity);
+
+            // These checks fail due to lag, so no need to log
+            if (avatar == null) return true;
+            if (avatar.IsInWorld == false) return true;
+
+            avatar.ActivePower?.EndPower(EndPowerFlags.ExplicitCancel | EndPowerFlags.ClientRequest);
+            return true;
+        }
+
+        private bool OnContinuousPowerUpdate(MailboxMessage message)    // 14
+        {
+            var continuousPowerUpdate = message.As<NetMessageContinuousPowerUpdateToServer>();
+            if (continuousPowerUpdate == null) return Logger.WarnReturn(false, $"OnContinuousPowerUpdate(): Failed to retrieve message");
+
+            Avatar avatar = Player.GetActiveAvatarByIndex(continuousPowerUpdate.AvatarIndex);
+            if (avatar == null) return true;
+
+            PrototypeId powerProtoRef = (PrototypeId)continuousPowerUpdate.PowerPrototypeId;
+            ulong targetId = continuousPowerUpdate.HasIdTargetEntity ? continuousPowerUpdate.IdTargetEntity : 0;
+            Vector3 targetPosition = continuousPowerUpdate.HasTargetPosition ? new(continuousPowerUpdate.TargetPosition) : Vector3.Zero;
+            uint randomSeed = continuousPowerUpdate.HasRandomSeed ? continuousPowerUpdate.RandomSeed : 0;
+
+            avatar.SetContinuousPower(powerProtoRef, targetId, targetPosition, randomSeed);
+            return true;
+        }
+
+        private bool OnCancelPendingAction(MailboxMessage message)  // 15
+        {
+            var cancelPendingAction = message.As<NetMessageCancelPendingAction>();
+            if (cancelPendingAction == null) return Logger.WarnReturn(false, $"OnCancelPendingAction(): Failed to retrieve message");
+
+            Avatar avatar = Player.GetActiveAvatarByIndex(cancelPendingAction.AvatarIndex);
+            if (avatar == null) return true;
+
+            avatar.CancelPendingAction();
+
+            return true;
+        }
+
         private bool OnPickupInteraction(MailboxMessage message)    // 32
         {
             var pickupInteraction = message.As<NetMessagePickupInteraction>();
@@ -522,6 +648,11 @@ namespace MHServerEmu.Games.Network
             // Make sure the item still exists and is not owned by item (multiple pickup interactions can be received due to lag)
             if (item == null || Player.Owns(item))
                 return true;
+
+            // Do not allow to pick up items belonging to other players
+            ulong restrictedToPlayerGuid = item.Properties[PropertyEnum.RestrictedToPlayerGuid];
+            if (restrictedToPlayerGuid != 0 && restrictedToPlayerGuid != Player.DatabaseUniqueId)
+                return Logger.WarnReturn(false, $"OnPickupInteraction(): Player {Player} is attempting to pick up item {item} restricted to player 0x{restrictedToPlayerGuid:X}");
 
             // Add item to the player's inventory
             Inventory inventory = Player.GetInventory(InventoryConvenienceLabel.General);
@@ -537,7 +668,8 @@ namespace MHServerEmu.Games.Network
             // Cancel lifespan expiration for the picked up item
             item.CancelScheduledLifespanExpireEvent();
 
-            // TODO: Remove RestrictedToPlayerGuid property once we have personal loot
+            // Remove instanced loot restriction
+            item.Properties.RemoveProperty(PropertyEnum.RestrictedToPlayerGuid);
 
             return true;
         }
@@ -773,12 +905,40 @@ namespace MHServerEmu.Games.Network
             return true;
         }
 
+        private bool OnRequestDeathRelease(MailboxMessage message)  // 48
+        {
+            var swapInAbilityBar = message.As<NetMessageRequestDeathRelease>();
+            if (swapInAbilityBar == null) return Logger.WarnReturn(false, $"OnRequestDeathRelease(): Failed to retrieve message");
+
+            Avatar avatar = Player.CurrentAvatar;
+            if (avatar == null) return Logger.WarnReturn(false, $"OnRequestDeathRelease(): avatar == null");
+
+            // Requesting release of an avatar who is no longer dead due to lag
+            if (avatar.IsDead == false) return true;
+
+            return avatar.Resurrect();
+        }
+
         private bool OnReturnToHub(MailboxMessage message)  // 55
         {
             var returnToHub = message.As<NetMessageReturnToHub>();
             if (returnToHub == null) return Logger.WarnReturn(false, $"OnReturnToHub(): Failed to retrieve message");
 
-            Game.MovePlayerToRegion(this, (PrototypeId)RegionPrototypeId.AvengersTowerHUBRegion, (PrototypeId)WaypointPrototypeId.AvengersTowerHub);
+            Avatar avatar = Player.CurrentAvatar;
+            if (avatar == null) return Logger.WarnReturn(false, "OnReturnToHub(): avatar == null");
+
+            Region region = avatar.Region;
+            if (region == null) return Logger.WarnReturn(false, "OnReturnToHub(): region == null");
+
+            // TODO: Use region.GetBodysliderPowerRef()
+
+            if (region.RegionPrototype.Behavior == RegionBehaviorAsset.Town)
+                return Logger.WarnReturn(false, $"OnReturnToHub(): Returning from hubs via bodysliding is not yet implemented");
+
+            PrototypeId bodysliderPowerRef = GameDatabase.GlobalsPrototype.ReturnToHubPower;
+            PowerActivationSettings settings = new(avatar.Id, avatar.RegionLocation.Position, avatar.RegionLocation.Position);
+
+            avatar.ActivatePower(bodysliderPowerRef, ref settings);
             return true;
         }
 

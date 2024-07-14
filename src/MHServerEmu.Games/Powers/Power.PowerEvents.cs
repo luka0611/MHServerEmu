@@ -9,7 +9,6 @@ using MHServerEmu.Games.Entities.Items;
 using MHServerEmu.Games.Entities.PowerCollections;
 using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.GameData.Prototypes;
-using MHServerEmu.Games.Generators;
 using MHServerEmu.Games.Properties;
 using MHServerEmu.Games.Regions;
 
@@ -366,9 +365,9 @@ namespace MHServerEmu.Games.Powers
         private bool CanTriggerPowerEventType(PowerEventType eventType, in PowerActivationSettings settings)
         {
             // TODO: Recheck this when we have a proper PowerEffectsPacket / PowerResults implementation
-            if (settings.PowerResults != null && settings.PowerResults.TargetEntityId != Entity.InvalidId)
+            if (settings.PowerResults != null && settings.PowerResults.TargetId != Entity.InvalidId)
             {
-                WorldEntity target = Game.EntityManager.GetEntity<WorldEntity>(settings.PowerResults.TargetEntityId);
+                WorldEntity target = Game.EntityManager.GetEntity<WorldEntity>(settings.PowerResults.TargetId);
                 if (target != null && target.Properties[PropertyEnum.DontTriggerOtherPowerEvents, (int)eventType])
                     return false;
             }
@@ -503,14 +502,56 @@ namespace MHServerEmu.Games.Powers
             return false;
         }
 
+        private bool GetPowersToOperateOnForPowerEvent(WorldEntity owner, PowerEventActionPrototype triggeredPowerEvent,
+            in PowerActivationSettings settings, List<Power> outputList)
+        {
+            WorldEntity cooldownPowerOwner = owner;
+
+            PowerEventContextPrototype contextProto = triggeredPowerEvent.PowerEventContext;
+            if (contextProto is PowerEventContextCooldownChangePrototype cooldownChangeContextProto &&
+                cooldownChangeContextProto.TargetsOwner == false)
+            {
+                cooldownPowerOwner = Game.EntityManager.GetEntity<WorldEntity>(settings.TargetEntityId);
+
+                if (cooldownPowerOwner == null)
+                {
+                    return Logger.WarnReturn(false,
+                        $"GetPowersToOperateOnForPowerEvent(): Cooldown power event action has TargetsOwner=false but no target found. " +
+                        $"targetEntityId=[{settings.TargetEntityId}] triggeringPower=[{settings.TriggeringPowerRef.GetName()}]");
+                }
+            }
+
+            PowerCollection powerCollection = cooldownPowerOwner.PowerCollection;
+            if (powerCollection == null) return Logger.WarnReturn(false, $"GetPowersToOperateOnForPowerEvent(): powerCollection == null");
+
+            if (triggeredPowerEvent.Power != PrototypeId.Invalid)
+            {
+                Power power = powerCollection.GetPower(triggeredPowerEvent.Power);
+                if (power != null)
+                    outputList.Add(power);
+            }
+
+            if (triggeredPowerEvent.Keywords.HasValue())
+                outputList.AddRange(powerCollection.GetPowersMatchingAnyKeyword(triggeredPowerEvent.Keywords));
+
+            return outputList.Count > 0;
+        }
+
         #region Event Actions
 
         // Please keep these ordered by PowerEventActionType enum value
 
         // 1
-        private void DoPowerEventActionBodyslide()
+        private bool DoPowerEventActionBodyslide()
         {
-            Logger.Warn($"DoPowerEventActionBodyslide(): Not implemented");
+            Logger.Trace($"DoPowerEventActionBodyslide(): Owner={Owner}");
+
+            Player player = Owner.GetOwnerOfType<Player>();
+            if (player == null) return Logger.WarnReturn(false, $"DoPowerEventActionBodyslide(): player == null");
+
+            Game.MovePlayerToRegion(player.PlayerConnection, (PrototypeId)RegionPrototypeId.NPEAvengersTowerHUBRegion,
+                (PrototypeId)WaypointPrototypeId.NPEAvengersTowerHub);
+            return true;
         }
 
         // 2, 3
@@ -818,25 +859,93 @@ namespace MHServerEmu.Games.Powers
         // 24
         private void DoPowerEventActionCooldownStart(PowerEventActionPrototype triggeredPowerEvent, in PowerActivationSettings settings)
         {
-            Logger.Warn($"DoPowerEventActionCooldownStart(): Not implemented");
+            //Logger.Debug($"DoPowerEventActionCooldownStart()");
+
+            if (settings.Flags.HasFlag(PowerActivationSettingsFlags.AutoActivate))
+                return;
+
+            List<Power> powersToOperateOnList = new();
+            if (GetPowersToOperateOnForPowerEvent(Owner, triggeredPowerEvent, in settings, powersToOperateOnList))
+            {
+                TimeSpan cooldownDuration = TimeSpan.FromSeconds(triggeredPowerEvent.GetEventParam(Properties, Owner));
+                foreach (Power power in powersToOperateOnList)
+                {
+                    if (power == null)
+                    {
+                        Logger.Warn("DoPowerEventActionCooldownStart(): power == null");
+                        continue;
+                    }
+
+                    power.StartCooldown(cooldownDuration);
+                }
+            }
         }
 
         // 25
         private void DoPowerEventActionCooldownEnd(PowerEventActionPrototype triggeredPowerEvent, in PowerActivationSettings settings)
         {
-            Logger.Warn($"DoPowerEventActionCooldownEnd(): Not implemented");
+            //Logger.Debug($"DoPowerEventActionCooldownEnd()");
+
+            List<Power> powersToOperateOnList = new();
+            if (GetPowersToOperateOnForPowerEvent(Owner, triggeredPowerEvent, in settings, powersToOperateOnList))
+            {
+                foreach (Power power in powersToOperateOnList)
+                {
+                    if (power == null)
+                    {
+                        Logger.Warn("DoPowerEventActionCooldownEnd(): power == null");
+                        continue;
+                    }
+
+                    power.EndCooldown();
+                }
+            }
         }
 
         // 26
         private void DoPowerEventActionCooldownModifySecs(PowerEventActionPrototype triggeredPowerEvent, in PowerActivationSettings settings)
         {
-            Logger.Warn($"DoPowerEventActionCooldownModifySecs(): Not implemented");
+            Logger.Debug($"DoPowerEventActionCooldownModifySecs()");
+
+            List<Power> powersToOperateOnList = new();
+            if (GetPowersToOperateOnForPowerEvent(Owner, triggeredPowerEvent, in settings, powersToOperateOnList))
+            {
+                TimeSpan offset = TimeSpan.FromSeconds(triggeredPowerEvent.GetEventParam(Properties, Owner));
+
+                foreach (Power power in powersToOperateOnList)
+                {
+                    if (power == null)
+                    {
+                        Logger.Warn("DoPowerEventActionCooldownModifySecs(): power == null");
+                        continue;
+                    }
+
+                    power.ModifyCooldown(offset);
+                }
+            }
         }
 
         // 27
         private void DoPowerEventActionCooldownModifyPct(PowerEventActionPrototype triggeredPowerEvent, in PowerActivationSettings settings)
         {
-            Logger.Warn($"DoPowerEventActionCooldownModifyPct(): Not implemented");
+            Logger.Debug($"DoPowerEventActionCooldownModifyPct()");
+
+            List<Power> powersToOperateOnList = new();
+            if (GetPowersToOperateOnForPowerEvent(Owner, triggeredPowerEvent, in settings, powersToOperateOnList))
+            {
+                float eventParam = triggeredPowerEvent.GetEventParam(Properties, Owner);
+
+                foreach (Power power in powersToOperateOnList)
+                {
+                    if (power == null)
+                    {
+                        Logger.Warn("DoPowerEventActionCooldownModifyPct(): power == null");
+                        continue;
+                    }
+
+                    power.ModifyCooldownByPercentage(eventParam);
+                }
+            }
         }
 
         // 28
@@ -887,6 +996,11 @@ namespace MHServerEmu.Games.Powers
             foreach (WorldEntity worldEntity in region.IterateEntitiesInVolume(vacuumVolume, new(EntityRegionSPContextFlags.ActivePartition)))
             {
                 if (worldEntity is not Item item)
+                    continue;
+
+                // Check if this is an item restricted to a player (instanced loot)
+                ulong restrictedToPlayerGuid = item.Properties[PropertyEnum.RestrictedToPlayerGuid];
+                if (restrictedToPlayerGuid != 0 && restrictedToPlayerGuid != player.DatabaseUniqueId)
                     continue;
 
                 // Push the item to the stack

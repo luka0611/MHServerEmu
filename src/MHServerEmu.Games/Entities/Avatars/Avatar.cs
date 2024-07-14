@@ -28,7 +28,7 @@ namespace MHServerEmu.Games.Entities.Avatars
         private static readonly Logger Logger = LogManager.CreateLogger();
         private static readonly TimeSpan StandardContinuousPowerRecheckDelay = TimeSpan.FromMilliseconds(150);
 
-        private readonly EventPointer<TEMP_SendActivatePowerMessageEvent> _swapInPowerEvent = new();
+        private readonly EventPointer<ActivateSwapInPowerEvent> _activateSwapInPowerEvent = new();
         private readonly EventPointer<RecheckContinuousPowerEvent> _recheckContinuousPowerEvent = new();
 
         private ReplicatedVariable<string> _playerName = new(0, string.Empty);
@@ -503,22 +503,6 @@ namespace MHServerEmu.Games.Entities.Avatars
             throw new NotImplementedException();
         }
 
-        public void ScheduleSwapInPower()
-        {
-            ScheduleEntityEvent(_swapInPowerEvent, TimeSpan.FromMilliseconds(700), GameDatabase.GlobalsPrototype.AvatarSwapInPower);
-        }
-
-        private void ScheduleRecheckContinuousPower(TimeSpan delay)
-        {
-            if (_recheckContinuousPowerEvent.IsValid)
-            {
-                Game.GameEventScheduler.RescheduleEvent(_recheckContinuousPowerEvent, delay);
-                return;
-            }
-
-            ScheduleEntityEvent(_recheckContinuousPowerEvent, delay);
-        }
-
         private bool AssignDefaultAvatarPowers()
         {
             Player player = GetOwnerOfType<Player>();
@@ -606,11 +590,6 @@ namespace MHServerEmu.Games.Entities.Avatars
             }
 
             return true;
-        }
-
-        private class RecheckContinuousPowerEvent : CallMethodEvent<Entity>
-        {
-            protected override CallbackDelegate GetCallback() => (t) => ((Avatar)t).CheckContinuousPower();
         }
 
         #endregion
@@ -713,10 +692,26 @@ namespace MHServerEmu.Games.Entities.Avatars
             Properties[PropertyEnum.AvatarTeamUpStartTime] = (long)Game.CurrentTime.TotalMilliseconds;
             //Power power = GetPower(TeamUpPowerRef);
             //Properties[PropertyEnum.AvatarTeamUpDuration] = power.GetCooldownDuration();
+
+            if (teamUp.IsDead)
+                teamUp.Resurrect();
+
             EntitySettings setting = new()
             { OptionFlags = EntitySettingsOptionFlags.IsNewOnServer | EntitySettingsOptionFlags.IsClientEntityHidden };
             teamUp.EnterWorld(RegionLocation.Region, teamUp.GetPositionNearAvatar(this), RegionLocation.Orientation, setting);
             teamUp.AIController.Blackboard.PropertyCollection[PropertyEnum.AIAssistedEntityID] = Id; // link to owner
+        }
+
+        public bool ClearSummonedTeamUpAgent(Agent teamUpAgent)
+        {
+            if (teamUpAgent != CurrentTeamUpAgent)
+                return Logger.WarnReturn(false, "CleanUpSummonedTeamUpAgent(): teamUpAgent != CurrentTeamUpAgent");
+
+            Properties.RemoveProperty(PropertyEnum.AvatarTeamUpIsSummoned);
+            Properties.RemoveProperty(PropertyEnum.AvatarTeamUpStartTime);
+            //Properties.RemoveProperty(PropertyEnum.AvatarTeamUpDuration);
+
+            return true;
         }
 
         public void DismissTeamUpAgent()
@@ -725,19 +720,7 @@ namespace MHServerEmu.Games.Entities.Avatars
             if (teamUp == null) return;
             if (teamUp.IsAliveInWorld)
             {
-                // TODO: teamUp.Kill(null);
-
-                var killMessage = NetMessageEntityKill.CreateBuilder()
-                    .SetIdEntity(teamUp.Id)
-                    .SetIdKillerEntity(0)
-                    .SetKillFlags(0)
-                    .Build();
-                Game.NetworkManager.SendMessageToInterested(killMessage, teamUp, AOINetworkPolicyValues.AOIChannelProximity);
-                Properties.RemoveProperty(PropertyEnum.AvatarTeamUpIsSummoned);
-                Properties.RemoveProperty(PropertyEnum.AvatarTeamUpStartTime);
-                Properties.RemoveProperty(PropertyEnum.AvatarTeamUpDuration);
-                teamUp.AIController.SetIsEnabled(false);
-                teamUp.ScheduleExitWorldEvent(TimeSpan.FromMilliseconds(teamUp.WorldEntityPrototype.RemoveFromWorldTimerMS));
+                teamUp.Kill();
             }
         }
 
@@ -829,7 +812,16 @@ namespace MHServerEmu.Games.Entities.Avatars
             Properties[PropertyEnum.CombatLevel] = 60;
             Properties[PropertyEnum.AvatarPowerUltimatePoints] = 19;
 
-            // Health
+            // Add base stats to compensate for the lack of equipment
+            Properties[PropertyEnum.DamageRating] = 2500f;
+            Properties[PropertyEnum.DamagePctBonusVsBosses] = 4f;
+            Properties[PropertyEnum.Defense, (int)DamageType.Any] = 15000f;
+            Properties[PropertyEnum.DefenseChangePercent, (int)DamageType.Any] = 5f;
+            Properties[PropertyEnum.CritChancePctAdd] = 0.25f;
+            Properties[PropertyEnum.SuperCritChancePctAdd] = 0.35f;
+            Properties[PropertyEnum.HealthMaxMagnitudeDCL] = 1f + MathF.Max(Game.CustomGameOptions.AvatarHealthMaxMagnitudeBonus, 0f);
+
+            // Set health to max
             Properties[PropertyEnum.Health] = Properties[PropertyEnum.HealthMaxOther];
 
             // Resources
@@ -852,14 +844,6 @@ namespace MHServerEmu.Games.Entities.Avatars
             // Secondary resource base is already present in the prototype's property collection as a curve property
             Properties[PropertyEnum.SecondaryResourceMax] = Properties[PropertyEnum.SecondaryResourceMaxBase];
             Properties[PropertyEnum.SecondaryResource] = Properties[PropertyEnum.SecondaryResourceMax];
-
-            // Add base stats to compensate for the lack of equipment
-            Properties[PropertyEnum.DamageRating] = 2500f;
-            Properties[PropertyEnum.DamagePctBonusVsBosses] = 4f;
-            Properties[PropertyEnum.Defense, (int)DamageType.Any] = 15000f;
-            Properties[PropertyEnum.DefenseChangePercent, (int)DamageType.Any] = 5f;
-            Properties[PropertyEnum.CritChancePctAdd] = 0.25f;
-            Properties[PropertyEnum.SuperCritChancePctAdd] = 0.35f;
 
             // Stats
             foreach (PrototypeId entryId in avatarProto.StatProgressionTable)
@@ -920,5 +904,50 @@ namespace MHServerEmu.Games.Entities.Avatars
 
             _abilityKeyMappingList.Add(abilityKeyMapping);
         }
+
+        #region Scheduled Events
+
+        public void ScheduleSwapInPower()
+        {
+            ScheduleEntityEventCustom(_activateSwapInPowerEvent, TimeSpan.FromMilliseconds(700));
+            _activateSwapInPowerEvent.Get().Initialize(this);
+        }
+
+        private void ScheduleRecheckContinuousPower(TimeSpan delay)
+        {
+            if (_recheckContinuousPowerEvent.IsValid)
+            {
+                Game.GameEventScheduler.RescheduleEvent(_recheckContinuousPowerEvent, delay);
+                return;
+            }
+
+            ScheduleEntityEvent(_recheckContinuousPowerEvent, delay);
+        }
+
+        private class RecheckContinuousPowerEvent : CallMethodEvent<Entity>
+        {
+            protected override CallbackDelegate GetCallback() => (t) => ((Avatar)t).CheckContinuousPower();
+        }
+
+        private class ActivateSwapInPowerEvent : TargetedScheduledEvent<Entity>
+        {
+            public void Initialize(Avatar avatar)
+            {
+                _eventTarget = avatar;
+            }
+
+            public override bool OnTriggered()
+            {
+                Avatar avatar = (Avatar)_eventTarget;
+                PrototypeId swapInPowerRef = GameDatabase.GlobalsPrototype.AvatarSwapInPower;
+
+                PowerActivationSettings settings = new(avatar.Id, avatar.RegionLocation.Position, avatar.RegionLocation.Position);
+                settings.Flags = PowerActivationSettingsFlags.NotifyOwner;
+
+                return avatar.ActivatePower(swapInPowerRef, ref settings) == PowerUseResult.Success;
+            }
+        }
+
+        #endregion
     }
 }

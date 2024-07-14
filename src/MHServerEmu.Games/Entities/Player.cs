@@ -153,28 +153,31 @@ namespace MHServerEmu.Games.Entities
             success &= Serializer.Transfer(archive, ref _missionManager);
             success &= Serializer.Transfer(archive, ref _avatarProperties);
 
-            // archive.IsTransient
-            success &= Serializer.Transfer(archive, ref _shardId);
-            success &= Serializer.Transfer(archive, ref _playerName);
-            success &= Serializer.Transfer(archive, ref _consoleAccountIds[0]);
-            success &= Serializer.Transfer(archive, ref _consoleAccountIds[1]);
-            success &= Serializer.Transfer(archive, ref _secondaryPlayerName);
-            success &= Serializer.Transfer(archive, ref _matchQueueStatus);
-            success &= Serializer.Transfer(archive, ref _emailVerified);
-            success &= Serializer.Transfer(archive, ref _accountCreationTimestamp);
+            if (archive.IsTransient)
+            {
+                success &= Serializer.Transfer(archive, ref _shardId);
+                success &= Serializer.Transfer(archive, ref _playerName);
+                success &= Serializer.Transfer(archive, ref _consoleAccountIds[0]);
+                success &= Serializer.Transfer(archive, ref _consoleAccountIds[1]);
+                success &= Serializer.Transfer(archive, ref _secondaryPlayerName);
+                success &= Serializer.Transfer(archive, ref _matchQueueStatus);
+                success &= Serializer.Transfer(archive, ref _emailVerified);
+                success &= Serializer.Transfer(archive, ref _accountCreationTimestamp);
 
-            // archive.IsReplication
-            success &= Serializer.Transfer(archive, ref _partyId);
-            success &= GuildMember.SerializeReplicationRuntimeInfo(archive, ref _guildId, ref _guildName, ref _guildMembership);
+                if (archive.IsReplication)
+                {
+                    success &= Serializer.Transfer(archive, ref _partyId);
+                    success &= GuildMember.SerializeReplicationRuntimeInfo(archive, ref _guildId, ref _guildName, ref _guildMembership);
 
-            // There is a string here that is always empty and is immediately discarded after reading, purpose unknown
-            string emptyString = string.Empty;
-            success &= Serializer.Transfer(archive, ref emptyString);
-            if (emptyString != string.Empty) Logger.Warn($"Serialize(): emptyString is not empty!");
+                    // There is a string here that is always empty and is immediately discarded after reading, purpose unknown
+                    string emptyString = string.Empty;
+                    success &= Serializer.Transfer(archive, ref emptyString);
+                    if (emptyString != string.Empty) Logger.Warn($"Serialize(): emptyString is not empty!");
+                }
+            }
 
-            //bool hasCommunityData = archive.IsPersistent || archive.IsMigration
-            //    || (archive.IsReplication && ((AOINetworkPolicyValues)archive.ReplicationPolicy).HasFlag(AOINetworkPolicyValues.AOIChannelOwner));
-            bool hasCommunityData = true;
+            bool hasCommunityData = archive.IsPersistent || archive.IsMigration ||
+                (archive.IsReplication && archive.HasReplicationPolicy(AOINetworkPolicyValues.AOIChannelOwner));
             success &= Serializer.Transfer(archive, ref hasCommunityData);
             if (hasCommunityData)
                 success &= Serializer.Transfer(archive, ref _community);
@@ -186,13 +189,13 @@ namespace MHServerEmu.Games.Entities
 
             success &= Serializer.Transfer(archive, ref _unlockedInventoryList);
 
-            //if (archive.IsMigration || (archive.IsReplication && ((AOINetworkPolicyValues)archive.ReplicationPolicy).HasFlag(AOINetworkPolicyValues.AOIChannelOwner)))
-            success &= Serializer.Transfer(archive, ref _badges);
+            if (archive.IsMigration || (archive.IsReplication && archive.HasReplicationPolicy(AOINetworkPolicyValues.AOIChannelOwner)))
+                success &= Serializer.Transfer(archive, ref _badges);
 
             success &= Serializer.Transfer(archive, ref _gameplayOptions);
 
-            //if (archive.IsMigration || (archive.IsReplication && ((AOINetworkPolicyValues)archive.ReplicationPolicy).HasFlag(AOINetworkPolicyValues.AOIChannelOwner)))
-            success &= Serializer.Transfer(archive, ref _achievementState);
+            if (archive.IsMigration || (archive.IsReplication && archive.HasReplicationPolicy(AOINetworkPolicyValues.AOIChannelOwner)))
+                success &= Serializer.Transfer(archive, ref _achievementState);
 
             success &= Serializer.Transfer(archive, ref _stashTabOptionsDict);
 
@@ -205,6 +208,8 @@ namespace MHServerEmu.Games.Entities
         public void LoadFromDBAccount(DBAccount account)
         {
             // Adjust properties
+            Properties[PropertyEnum.Currency, GameDatabase.CurrencyGlobalsPrototype.Credits] = account.Player.Credits;
+
             foreach (var accountAvatar in account.Avatars.Values)
             {
                 var avatarPrototypeRef = (PrototypeId)accountAvatar.RawPrototype;
@@ -340,6 +345,8 @@ namespace MHServerEmu.Games.Entities
         {
             account.Player.RawAvatar = (long)CurrentAvatar.Prototype.DataRef;
 
+            account.Player.Credits = Properties[PropertyEnum.Currency, GameDatabase.CurrencyGlobalsPrototype.Credits];
+
             foreach (Avatar avatar in IterateAvatars())
             {
                 DBAvatar dbAvatar = account.GetAvatar((long)avatar.PrototypeDataRef);
@@ -363,7 +370,7 @@ namespace MHServerEmu.Games.Entities
                 .Build());
 
             SendMessage(NetMessageServerVersion.CreateBuilder().SetVersion(Game.Version).Build());
-            SendMessage(LiveTuningManager.LiveTuningData.ToNetMessageLiveTuningUpdate());
+            SendMessage(Game.LiveTuningData.GetLiveTuningUpdate());
 
             SendMessage(NetMessageLocalPlayer.CreateBuilder()
                 .SetLocalPlayerEntityId(Id)
@@ -818,35 +825,15 @@ namespace MHServerEmu.Games.Entities
 
         public bool BeginSwitchAvatar(PrototypeId avatarProtoRef)
         {
-            if (PlayerConnection.IsUsingNewPowerMessageHandler)
-            {
-                Power avatarSwapChannel = CurrentAvatar.GetPower(GameDatabase.GlobalsPrototype.AvatarSwapChannelPower);
+            Power avatarSwapChannel = CurrentAvatar.GetPower(GameDatabase.GlobalsPrototype.AvatarSwapChannelPower);
+            if (avatarSwapChannel == null) return Logger.WarnReturn(false, "BeginSwitchAvatar(): avatarSwapChannel == null");
 
-                PowerActivationSettings settings = new(CurrentAvatar.Id, CurrentAvatar.RegionLocation.Position, CurrentAvatar.RegionLocation.Position);
-                settings.Flags = PowerActivationSettingsFlags.NotifyOwner;
-                CurrentAvatar.ActivatePower(avatarSwapChannel.PrototypeDataRef, ref settings);
+            PowerActivationSettings settings = new(CurrentAvatar.Id, CurrentAvatar.RegionLocation.Position, CurrentAvatar.RegionLocation.Position);
+            settings.Flags = PowerActivationSettingsFlags.NotifyOwner;
+            CurrentAvatar.ActivatePower(avatarSwapChannel.PrototypeDataRef, ref settings);
 
-                Properties.RemovePropertyRange(PropertyEnum.AvatarSwitchPending);
-                Properties[PropertyEnum.AvatarSwitchPending, avatarProtoRef] = true;
-
-                return true;
-            }
-
-            if (_switchAvatarEvent.IsValid) return false;
-
-            // Get swap out power for the current avatar
-            Power swapOutPower = CurrentAvatar.GetPower(GameDatabase.GlobalsPrototype.AvatarSwapOutPower);
-            if (swapOutPower == null) return Logger.WarnReturn(false, "BeginSwitchAvatar(): swapOutPower == null;");
-
-            // Set pending switch
             Properties.RemovePropertyRange(PropertyEnum.AvatarSwitchPending);
             Properties[PropertyEnum.AvatarSwitchPending, avatarProtoRef] = true;
-
-            // Activate swap out power for the current avatar
-            CurrentAvatar.TEMP_SendActivatePowerMessage(swapOutPower.PrototypeDataRef);
-
-            // Schedule avatar switch for when the power ends
-            ScheduleEntityEvent(_switchAvatarEvent, swapOutPower.GetAnimationTime());
 
             return true;
         }

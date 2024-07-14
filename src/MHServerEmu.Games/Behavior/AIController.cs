@@ -7,7 +7,7 @@ using MHServerEmu.Games.Entities;
 using MHServerEmu.Games.Events;
 using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.GameData.Prototypes;
-using MHServerEmu.Games.Generators.Population;
+using MHServerEmu.Games.Populations;
 using MHServerEmu.Games.Powers;
 using MHServerEmu.Games.Properties;
 using MHServerEmu.Games.Regions;
@@ -444,6 +444,12 @@ namespace MHServerEmu.Games.Behavior
             ScheduleAIThinkEvent(TimeSpan.FromMilliseconds(50), true);
 
             // TODO Off PropertyEnum.AIThrowPower
+        }
+
+        public void OnAISetSimulated(bool simulated)
+        {
+            SetIsEnabled(simulated);
+            Brain?.OnSetSimulated(simulated);
         }
     }
 }

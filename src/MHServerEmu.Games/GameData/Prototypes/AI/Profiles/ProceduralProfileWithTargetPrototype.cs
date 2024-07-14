@@ -8,7 +8,6 @@ using MHServerEmu.Games.Properties;
 using MHServerEmu.Core.VectorMath;
 using MHServerEmu.Core.Collisions;
 using MHServerEmu.Games.Entities.Avatars;
-using MHServerEmu.Games.Generators;
 
 namespace MHServerEmu.Games.GameData.Prototypes
 {
@@ -223,7 +222,7 @@ namespace MHServerEmu.Games.GameData.Prototypes
                 Locomotor locomotor = agent.Locomotor;
                 if (locomotor == null)
                 {
-                    ProceduralAI.Logger.Warn($"Agent [{agent}] does not have a locomotor and should not be calling this function");
+                    // ProceduralAI.Logger.Warn($"Agent [{agent}] does not have a locomotor and should not be calling this function");
                     return;
                 }
                 locomotor.LookAt(target.RegionLocation.Position);
@@ -460,7 +459,7 @@ namespace MHServerEmu.Games.GameData.Prototypes
             Game game = agent.Game;
             var blackboard = agent.AIController?.Blackboard;
             if (game == null || blackboard == null) return;
-            blackboard.PropertyCollection[PropertyEnum.AICustomTimeVal1] = game.CurrentTime;
+            agent.Properties[PropertyEnum.AICustomTimeVal1] = game.CurrentTime;
 
             InitPower(agent, EffectPower);
         }
@@ -625,7 +624,7 @@ namespace MHServerEmu.Games.GameData.Prototypes
             ulong targetId = target != null ? target.Id : 0;
             if (locomotor.FollowEntityId != targetId)
             {
-                locomotor.FollowEntity(target.Id, 0.0f);
+                locomotor.FollowEntity(targetId, 0.0f);
                 locomotor.FollowEntityMissingEvent.AddActionBack(ownerController.MissileReturnEvent);
             }
 
@@ -655,10 +654,9 @@ namespace MHServerEmu.Games.GameData.Prototypes
             Locomotor locomotor = agent.Locomotor;
             if (locomotor == null) return;
 
-            ulong targetId = target.Id;
             if (target != null)
             {
-                locomotor.FollowEntity(targetId, 0.0f);
+                locomotor.FollowEntity(target.Id, 0.0f);
                 locomotor.FollowEntityMissingEvent.AddActionFront(ownerController.MissileReturnEvent);
             }
         }
