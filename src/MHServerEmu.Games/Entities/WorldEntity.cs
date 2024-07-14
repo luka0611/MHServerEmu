@@ -1135,7 +1135,7 @@ namespace MHServerEmu.Games.Entities
             {
                 Properties[PropertyEnum.Health] = health;
                 
-                if (totalDamage > 0f && this is Agent aiAgent) aiAgent.AITestOn();
+                if (healthDelta < 0f && this is Agent aiAgent) aiAgent.AITestOn();
             }
 
             return true;
