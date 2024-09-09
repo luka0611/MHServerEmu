@@ -1,8 +1,10 @@
 name: Nightly Release (Windows x64)
 
 on:
-  schedule:
-    - cron: '15 7 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - missions
 
 jobs:
   build:
@@ -26,7 +28,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MHServerEmu-nightly-${{ env.DATE }}-Release-windows-x64
+        name: MHServerEmu-Test-${{ env.DATE }}-Missions-windows-x64
         path: |
           ./src/MHServerEmu/bin/x64/Release/net6.0
           !./src/MHServerEmu/bin/x64/Release/net6.0/*.pdb
