@@ -2,6 +2,7 @@
 using MHServerEmu.Core.Logging;
 using MHServerEmu.Core.VectorMath;
 using MHServerEmu.Games.Entities;
+using MHServerEmu.Games.Entities.Inventories;
 using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.GameData.Prototypes;
 using MHServerEmu.Games.Properties;
@@ -22,12 +23,13 @@ namespace MHServerEmu.Games.Populations
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
 
+        public Game Game { get; private set; }
         public ulong Id { get; }
         public SpawnGroup Group { get; set; }
         public SpawnState State { get; private set; }
         public PrototypeId EntityRef { get; set; }
         public WorldEntity ActiveEntity { get; set; }
-        public PropertyCollection Properties { get; set; }
+        public PropertyCollection Properties { get; set; } = new();
         public Transform3 Transform { get; set; } = Transform3.Identity();
         public bool? SnapToFloor { get; set; }
         public EntitySelectorPrototype EntitySelectorProto { get; set; }
@@ -46,17 +48,19 @@ namespace MHServerEmu.Games.Populations
             }
         }
 
-        public SpawnSpec(ulong id, SpawnGroup group)
+        public TimeSpan SpawnedTime { get; private set; }
+
+        public SpawnSpec(ulong id, SpawnGroup group, Game game)
         {
             Id = id;
             Group = group;
-            Properties = new();
+            Game = game;
         }
 
-        public SpawnSpec()
+        public SpawnSpec(Game game)
         {
+            Game = game;
             // TODO check std::shared_ptr<Gazillion::SpawnSpec>
-            Properties = new();
         }
 
         public bool Spawn()
@@ -67,7 +71,9 @@ namespace MHServerEmu.Games.Populations
             Orientation orientation = transform.Orientation;
 
             Region region = Group.PopulationManager.Region;
-            Game game = region.Game;
+            if (region == null) return false;
+            var manager = Game.EntityManager;
+            if (manager == null) return false;
 
             Cell cell = region.GetCellAtPosition(position);
             if (cell == null) return Logger.WarnReturn(false, "Spawn(): cell == null");
@@ -101,6 +107,17 @@ namespace MHServerEmu.Games.Populations
                 settings.Properties[PropertyEnum.SpawnGroupId] = Group.Id;
                 if (Group.ObjectProto != null)
                     settings.Properties[PropertyEnum.ClusterPrototype] = Group.ObjectProto.DataRef;
+
+                if (Group.SpawnerId != Entity.InvalidId)
+                {
+                    var spawner = manager.GetEntity<Spawner>(Group.SpawnerId);
+                    if (spawner != null)
+                    {
+                        var inventory = spawner.GetInventory(InventoryConvenienceLabel.Summoned);
+                        if (inventory != null)
+                            settings.InventoryLocation = new(spawner.Id, inventory.PrototypeDataRef);
+                    }
+                }
             }
 
             settings.Position = position;
@@ -111,8 +128,10 @@ namespace MHServerEmu.Games.Populations
             settings.Actions = Actions;
             settings.SpawnSpec = this;
 
-            ActiveEntity = game.EntityManager.CreateEntity(settings) as WorldEntity;
+            ActiveEntity = manager.CreateEntity(settings) as WorldEntity;
             State = SpawnState.Live;
+            SpawnedTime = Game.CurrentTime;
+
             return true;
         }
 
@@ -141,6 +160,8 @@ namespace MHServerEmu.Games.Populations
         {
             if (State == SpawnState.Destroyed || State == SpawnState.Defeated) return;
             State = SpawnState.Defeated;
+
+            SpawnedTime = Game.CurrentTime;
 
             // TODO defeat
 

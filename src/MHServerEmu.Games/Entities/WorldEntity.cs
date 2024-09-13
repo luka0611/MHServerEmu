@@ -176,6 +176,8 @@ namespace MHServerEmu.Games.Entities
             {
                 Properties[PropertyEnum.CharacterLevel] = 60;
                 Properties[PropertyEnum.CombatLevel] = 60;
+                long maxHealth = Properties[PropertyEnum.HealthMaxOther];
+                if (maxHealth > 500000) Properties[PropertyEnum.HealthMaxOther] = 500000; // healthMax limit
                 Properties[PropertyEnum.Health] = Properties[PropertyEnum.HealthMaxOther];
             }
 
@@ -251,16 +253,17 @@ namespace MHServerEmu.Games.Entities
 
         public virtual void OnKilled(WorldEntity killer, KillFlags killFlags, WorldEntity directKiller)
         {
+            bool notMissile = this is not Missile;
             // HACK: LOOT AND XP
-            if (this is Agent agent && agent is not Missile && agent is not Avatar && agent.IsTeamUpAgent == false)
+            if (this is Agent agent && notMissile && agent is not Avatar && agent.IsTeamUpAgent == false)
             {
                 GiveKillRewards(killer, killFlags, directKiller);
             }
 
             // Trigger EntityDead Event
-            if (killFlags.HasFlag(KillFlags.NoDeadEvent) == false && killer is Avatar avatar)
+            if (killFlags.HasFlag(KillFlags.NoDeadEvent) == false && notMissile)
             {
-                Player player = avatar.GetOwnerOfType<Player>();
+                var player = killer?.GetOwnerOfType<Player>();
                 Region?.EntityDeadEvent.Invoke(new(this, killer, player));
             }
 
@@ -1562,21 +1565,36 @@ namespace MHServerEmu.Games.Entities
 
             PowerCollection?.OnOwnerEnteredWorld();
 
+            var region = Region;
+
+            region.EntityEnteredWorldEvent.Invoke(new(this));
+
             if (WorldEntityPrototype.DiscoverInRegion)
-                Region.DiscoverEntity(this, false);
+                region.DiscoverEntity(this, false);
+
+            if (Bounds.CollisionType != BoundsCollisionType.None)
+                RegisterForPendingPhysicsResolve();
 
             UpdateInterestPolicies(true, settings);
-            Region.EntityTracker.ConsiderForTracking(this);
+            region.EntityTracker.ConsiderForTracking(this);
             UpdateSimulationState();
         }
 
         public virtual void OnExitedWorld()
         {
-            PowerCollection?.OnOwnerExitedWorld();
+            var region = Region;
+
+            if (region.EntityTracker != null)
+            {
+                region.EntityExitedWorldEvent.Invoke(new(this));
+                region.EntityTracker.RemoveFromTracking(this);
+            }
 
             // Undiscover from region
             if (WorldEntityPrototype.DiscoverInRegion)
-                Region.UndiscoverEntity(this, true);
+                region.UndiscoverEntity(this, true);
+
+            PowerCollection?.OnOwnerExitedWorld();
 
             // Undiscover from players
             if (InterestReferences.IsAnyPlayerInterested(AOINetworkPolicyValues.AOIChannelDiscovery))

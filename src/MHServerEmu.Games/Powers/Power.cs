@@ -1358,6 +1358,11 @@ namespace MHServerEmu.Games.Powers
             return powerProto.IsUltimate;
         }
 
+        public static bool IsTalentPower(PowerPrototype powerProto)
+        {
+            return powerProto is SpecializationPowerPrototype;
+        }
+
         public bool IsTravelPower()
         {
             return Prototype != null && Prototype.IsTravelPower;
@@ -2627,19 +2632,13 @@ namespace MHServerEmu.Games.Powers
                     var throwableEntity = Game.EntityManager.GetEntity<WorldEntity>(throwableEntityId);
                     if (throwableEntity != null)
                     {
-                        // Remember spawn spec to create a replacement
-                        SpawnSpec spawnSpec = throwableEntity.SpawnSpec;
+                        // Trigger EntityDead Event
+                        var avatar = Owner?.GetMostResponsiblePowerUser<Avatar>();
+                        var player = avatar?.GetOwnerOfType<Player>();
+                        Owner.Region.EntityDeadEvent.Invoke(new(throwableEntity, Owner, player));
 
                         // Destroy throwable
                         throwableEntity.Destroy();
-
-                        // Schedule the creation of a replacement entity
-                        if (spawnSpec != null)
-                        {
-                            EventPointer<TEMP_SpawnEntityEvent> spawnEntityEvent = new();
-                            Game.GameEventScheduler.ScheduleEvent(spawnEntityEvent, Game.CustomGameOptions.WorldEntityRespawnTime);
-                            spawnEntityEvent.Get().Initialize(spawnSpec);
-                        }
                     }
                 }
 

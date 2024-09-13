@@ -563,8 +563,15 @@ namespace MHServerEmu.Games.Missions
 
         public bool SetState(MissionState newState, bool sendUpdate = true)
         {
-            if (MissionManager.Debug && (State == MissionState.Active || State == MissionState.Completed))
-                Logger.Debug($"SetState {newState} for {PrototypeName}");
+            if (MissionManager.Debug) 
+            {
+                if (newState == MissionState.Completed)
+                    Logger.Debug($"SetState {newState} for {PrototypeName}");
+                else if (newState == MissionState.Failed)
+                    Logger.Error($"SetState {newState} for {PrototypeName}");
+                else 
+                    Logger.Trace($"SetState {newState} for {PrototypeName}");
+            }
 
             var oldState = _state;
             if (oldState == newState) return false;
@@ -596,8 +603,10 @@ namespace MHServerEmu.Games.Missions
 
         private bool OnChangeState()
         {
-            if (MissionManager.Debug && (State == MissionState.Active || State == MissionState.Completed))
+            if (MissionManager.Debug && State == MissionState.Active)
                 Logger.Trace($"OnChangeState State {State} for {PrototypeName}");
+            if (MissionManager.Debug && State == MissionState.Completed)
+                Logger.Warn($"OnChangeState State {State} for {PrototypeName}");
 
             if (IsSuspended) return false;
 
@@ -1806,7 +1815,7 @@ namespace MHServerEmu.Games.Missions
         {
             // if (MissionManager.Debug) Logger.Warn($"OnPlayerEnteredMission [{PrototypeName}]");
             CancelScheduledRemovePartipantEvent(player);
-            AddParticipant(player); // This broke Raft kismetSeq
+            AddParticipant(player);
         }
 
 
@@ -1819,6 +1828,7 @@ namespace MHServerEmu.Games.Missions
 
         public void OnSpawnedPopulation()
         {
+            if (MissionManager.Debug) Logger.Trace($"OnSpawnedPopulation [{PrototypeName}]");
             SpawnState = MissionSpawnState.Spawned;
             OnChangeState();
         }
@@ -2234,7 +2244,8 @@ namespace MHServerEmu.Games.Missions
         {
             var player = evt.Player;
             if (player == null) return;
-            OnPlayerEnteredMission(player); // This broke Rift Venom
+            if (PrototypeDataRef == (PrototypeId)6265104569686237654) return; // Fix for RaftNPEVenomKismetController
+            OnPlayerEnteredMission(player);
         }
 
         public void OnAreaLeft(PlayerLeftAreaGameEvent evt)
