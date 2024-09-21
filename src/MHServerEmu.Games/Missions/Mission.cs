@@ -112,6 +112,7 @@ namespace MHServerEmu.Games.Missions
         public int LootSeed { get => _lootSeed; set => _lootSeed = value; } // AvatarMissionLootSeed
         public SortedSet<ulong> Participants { get => _participants; }
         public bool IsSuspended { get => _isSuspended; }
+        public List<MissionObjective> Objectives { get => _objectiveDict.Values.ToList(); }
         public EventGroup EventGroup { get; } = new();
         public MissionManager MissionManager { get; }
         public Game Game { get; }
@@ -140,6 +141,7 @@ namespace MHServerEmu.Games.Missions
         public bool RestartingMission { get; private set; }
         public bool EventsRegistered { get; set; }
         public bool ReSuspended { get; set; }
+        public bool HasItemDrops { get => Prototype.HasItemDrops; }
 
         public Mission(MissionManager missionManager, PrototypeId missionRef)
         {
@@ -1811,6 +1813,56 @@ namespace MHServerEmu.Games.Missions
             return objectiveProto;
         }
 
+        public bool GetWidgetCompletionCount(PrototypeId widgetRef, out int currentCount, out int requiredCount, bool fail)
+        {
+            currentCount = 0;
+            requiredCount = 0;
+            bool found = false;
+
+            var objectiveSeq = CurrentObjectiveSequence;
+
+            foreach (var objective in _objectiveDict.Values)
+            {
+                var objectiveProto = objective.Prototype;
+                if (objectiveProto.Order != objectiveSeq) continue;
+
+                var widget = fail ? objectiveProto.MetaGameWidgetFail : objectiveProto.MetaGameWidget;
+                if (widget != widgetRef) continue;
+
+                var state = objective.State;
+                if (state == MissionObjectiveState.Active 
+                    || state == MissionObjectiveState.Completed
+                    || state == MissionObjectiveState.Failed)
+                {
+                    ushort current = 0;
+                    ushort required = 0;
+
+                    if (fail)
+                    {
+                        if (objective.GetFailCount(ref current, ref required) == false)
+                        {
+                            if (state == MissionObjectiveState.Failed) current = 1;
+                            required = 1;
+                        }
+                    }
+                    else
+                    {
+                        if (objective.GetCompletionCount(ref current, ref required) == false)
+                        {
+                            if (state == MissionObjectiveState.Completed) current = 1;
+                            required = 1;
+                        }
+                    }
+
+                    currentCount += current;
+                    requiredCount += required;
+                    found = true;
+                }
+                return false;
+            }
+            return found;
+        }
+
         public void OnPlayerEnteredMission(Player player)
         {
             // if (MissionManager.Debug) Logger.Warn($"OnPlayerEnteredMission [{PrototypeName}]");
@@ -2308,6 +2360,17 @@ namespace MHServerEmu.Games.Missions
             _partipantEvents[player.Id] = removePartipantEvent;
 
             return true;
+        }
+
+        public bool GetDropLootsForEnemy(WorldEntity enemy, List<MissionLootTable> dropLoots)
+        {
+            bool hasLoot = false;
+            if (HasItemDrops == false) return false;
+            foreach (var objective in _objectiveDict.Values)
+                if (objective.State == MissionObjectiveState.Active)
+                    hasLoot |= objective.GetDropLootsForEnemy(enemy, dropLoots);
+
+            return hasLoot;
         }
 
         protected class RemovePartipantEvent : CallMethodEventParam1<Mission, Player>

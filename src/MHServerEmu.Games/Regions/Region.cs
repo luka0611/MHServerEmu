@@ -63,6 +63,7 @@ namespace MHServerEmu.Games.Regions
         private readonly BitList _collisionIds = new();
         private readonly BitList _collisionBits = new();
         private readonly List<BitList> _collisionBitList = new();
+        private Dictionary<PrototypeId, ulong> _uniqueSelectorIndexes = new();
 
         private readonly HashSet<ulong> _discoveredEntities = new();
 
@@ -145,6 +146,7 @@ namespace MHServerEmu.Games.Regions
         public Event<AvatarEnteredRegionGameEvent> AvatarEnteredRegionEvent = new();
         public Event<PlayerEnteredRegionGameEvent> PlayerEnteredRegionEvent = new();
         public Event<PlayerLeftRegionGameEvent> PlayerLeftRegionEvent = new();
+        public Event<PlayerRegionChangeGameEvent> PlayerRegionChangeEvent = new();
         public Event<AvatarUsedPowerGameEvent> AvatarUsedPowerEvent = new();
         public Event<PlayerCompletedMissionGameEvent> PlayerCompletedMissionEvent = new();
         public Event<PlayerCompletedMissionObjectiveGameEvent> PlayerCompletedMissionObjectiveEvent = new();
@@ -260,9 +262,8 @@ namespace MHServerEmu.Games.Regions
             {
                 TuningTable.SetTuningTable(difficultySettings.TuningTable);
 
-                /* if (HasProperty(PropertyEnum.DifficultyIndex))
-                       TuningTable.SetDifficultyIndex(GetProperty<int>(PropertyEnum.DifficultyIndex), false);
-                */
+                if (Properties.HasProperty(PropertyEnum.DifficultyIndex))
+                       TuningTable.SetDifficultyIndex(Properties[PropertyEnum.DifficultyIndex], false);                
             }
 
             // NOTE: Divided start locations are used only in the Age of Ultron game mode
@@ -314,18 +315,6 @@ namespace MHServerEmu.Games.Regions
                 Logger.Warn("Initialize(): settings.DifficultyTierRef == PrototypeId.Invalid");
 
             Targets = RegionTransition.BuildConnectionEdges(settings.RegionDataRef); // For Teleport system
-
-            // Does this need to be initialized before we generate areas? Is this supposed to be happening later?
-            if (regionProto.MetaGames.HasValue())
-            {
-                foreach (var metaGameRef in regionProto.MetaGames)
-                {
-                    EntitySettings metaSettings = new();
-                    metaSettings.RegionId = Id;
-                    metaSettings.EntityRef = metaGameRef;
-                    MetaGame metagame = Game.EntityManager.CreateEntity(metaSettings) as MetaGame;
-                }
-            }
 
             if (settings.GenerateAreas)
             {
@@ -390,6 +379,34 @@ namespace MHServerEmu.Games.Regions
             // if (regionProto.UITopPanel != PrototypeId.Invalid)
             //     Properties[PropertyEnum.RegionUITopPanel] = regionProto.UITopPanel;
 
+            // MetaGames create
+            if (regionProto.MetaGames.HasValue())
+            {
+                PropertyCollection metaCollection = new();
+                var entryProto = regionProto.GetRegionQueueStateEntry(settings.GameStateId);
+                if (entryProto != null && entryProto.State != PrototypeId.Invalid && entryProto.StateParent != PrototypeId.Invalid)
+                {
+                    var progressionProto = GameDatabase.GetPrototype<MetaStateMissionProgressionPrototype>(entryProto.StateParent);
+                    if (progressionProto != null) {
+                        var nextState = progressionProto.NextState(entryProto.State);
+                        if (nextState != PrototypeId.Invalid)
+                            metaCollection[PropertyEnum.MetaStateWaveForce, entryProto.StateParent] = nextState;
+                    }
+                }
+
+                foreach (var metaGameRef in regionProto.MetaGames)
+                {
+                    EntitySettings metaSettings = new()
+                    {
+                        RegionId = Id,
+                        EntityRef = metaGameRef,
+                        Properties = metaCollection
+                    };
+                    var metagame = Game.EntityManager.CreateEntity(metaSettings);
+                    if (metagame == null) Logger.Warn($"Initialize(): metagame [{metaGameRef}] == null");
+                }
+            }
+
             IsGenerated = true;
             CreatedTime = Clock.UnixTime;
             return true;
@@ -438,39 +455,29 @@ namespace MHServerEmu.Games.Regions
                 }
             }
             // } while (found && (tries-- > 0)); // TODO: For what 100 tries?
-
             
             if (Game != null)
                 MissionManager?.Shutdown(this);
             
-            while (MetaGames.Any())
+            while (MetaGames.Count > 0)
             {
-                var metaGameId = MetaGames.First();
+                var metaGameId = MetaGames[0];
                 var metaGame = Game.EntityManager.GetEntity<Entity>(metaGameId);
                 metaGame?.Destroy();
                 MetaGames.Remove(metaGameId);
             }
 
-            while (Areas.Any())
+            while (Areas.Count > 0)
             {
                 var areaId = Areas.First().Key;
                 DestroyArea(areaId);
             }
 
             ClearDividedStartLocations();
-
-            /* var scheduler = Game?.GameEventScheduler;
-             if (scheduler != null)
-             {
-                 scheduler.CancelAllEvents(_events);
-             }
-
-             foreach (var entity in Game.EntityManager.GetEntities())
-             {
-                 if (entity is WorldEntity worldEntity)
-                     worldEntity.EmergencyRegionCleanup(this);
-             }
-            */
+            
+            foreach (var entity in Game.EntityManager.IterateEntities())
+                if (entity is WorldEntity worldEntity)
+                    worldEntity.EmergencyRegionCleanup(this);
 
             NaviMesh.Release();
             PopulationManager.Deallocate();
@@ -526,11 +533,9 @@ namespace MHServerEmu.Games.Regions
 
         public Area GetArea(PrototypeId prototypeId)
         {
-            foreach (var area in Areas)
-            {
-                if (area.Value.PrototypeDataRef == prototypeId)
-                    return area.Value;
-            }
+            foreach (var area in Areas.Values)
+                if (area.PrototypeDataRef == prototypeId)
+                    return area;
 
             return null;
         }
@@ -545,12 +550,9 @@ namespace MHServerEmu.Games.Regions
 
         public Area GetAreaAtPosition(Vector3 position)
         {
-            foreach (var itr in Areas)
-            {
-                Area area = itr.Value;
+            foreach (Area area in Areas.Values)
                 if (area.IntersectsXY(position))
                     return area;
-            }
 
             return null;
         }
@@ -572,6 +574,13 @@ namespace MHServerEmu.Games.Regions
                 if (bound == null || area.RegionBounds.Intersects(bound.Value))
                     yield return area;
             }
+        }
+
+        public void RebuildBlackOutZone(BlackOutZone zone)
+        {
+            foreach (var area in IterateAreas())
+                if (area.TestStatus(GenerateFlag.Population) && zone.Sphere.Intersects(area.RegionBounds))
+                    area.RebuildBlackOutZone(zone);
         }
 
         public int GetAreaLevel(Area area)
@@ -749,11 +758,6 @@ namespace MHServerEmu.Games.Regions
 
         public bool GenerateMissionPopulation()
         {
-            foreach (var metaGameId in MetaGames)
-            {
-                var metaGame = Game.EntityManager.GetEntity<MetaGame>(metaGameId);
-                metaGame?.RegisterStates();
-            }
             return MissionManager.GenerateMissionPopulation();
         }
 
@@ -1417,10 +1421,20 @@ namespace MHServerEmu.Games.Regions
             // MissionManager.TestLoadPlayerMissionManager(player);
             player.MissionManager.InitializeForPlayer(player, this);
 
+            var manager = Game.EntityManager;
+            // Consider MetaGames
+            var aoi = player.AOI;
+            if (aoi != null)
+                foreach (var metagameId in MetaGames)
+                {
+                    var metagame = manager.GetEntity<MetaGame>(metagameId);
+                    metagame?.ConsiderInAOI(aoi);                
+                }
+
             // Sync region discovered entities with the player that has entered this region
             foreach (ulong entityId in _discoveredEntities)
             {
-                WorldEntity discoveredEntity = Game.EntityManager.GetEntity<WorldEntity>(entityId);
+                WorldEntity discoveredEntity = manager.GetEntity<WorldEntity>(entityId);
                 if (discoveredEntity == null)
                 {
                     Logger.Warn("OnAddedToAOI(): discoveredEntity == null");
@@ -1435,10 +1449,11 @@ namespace MHServerEmu.Games.Regions
         {
             Logger.Trace($"OnRemovedFromAOI(): {this} from {player}");
 
+            var manager = Game.EntityManager;
             // Remove synced region discovered entities from the player that has left this region
             foreach (ulong entityId in _discoveredEntities)
             {
-                WorldEntity discoveredEntity = Game.EntityManager.GetEntity<WorldEntity>(entityId);
+                WorldEntity discoveredEntity = manager.GetEntity<WorldEntity>(entityId);
                 if (discoveredEntity == null)
                 {
                     Logger.Warn("OnRemovedFromAOI(): discoveredEntity == null");
@@ -1446,6 +1461,12 @@ namespace MHServerEmu.Games.Regions
                 }
 
                 player.UndiscoverEntity(discoveredEntity, true);
+            }
+
+            foreach(var metagameId in MetaGames)
+            {
+                var metagame = manager.GetEntity<MetaGame>(metagameId);
+                metagame?.OnRemovePlayer(player);
             }
 
             player.MissionManager.Shutdown(this);
@@ -1556,6 +1577,28 @@ namespace MHServerEmu.Games.Regions
             evalContext.SetVar_PropertyCollectionPtr(EvalContext.Default, properties);
             evalContext.SetReadOnlyVar_PropertyCollectionPtr(EvalContext.Other, Properties);
             Eval.RunBool(evalProto, evalContext);
+        }
+
+        public void GetUnuqueSelectorIndex(ref int index, int size, PrototypeId dataRef)
+        {
+            if (_uniqueSelectorIndexes.TryGetValue(dataRef, out ulong mask) == false) return;
+            int start = index;
+            do
+            {
+                index = (index + 1) % size;
+                if ((mask & (1UL << index)) == 0) return;
+            }
+            while (index != start);
+        }
+
+        public void SetUnuqueSelectorIndex(int index, bool setUnique, PrototypeId dataRef)
+        {
+            if (_uniqueSelectorIndexes.ContainsKey(dataRef) == false) return;
+
+            if (setUnique)
+                _uniqueSelectorIndexes[dataRef] |= 1UL << index;
+            else
+                _uniqueSelectorIndexes[dataRef] &= ~(1UL << index);
         }
     }
 
