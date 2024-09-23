@@ -139,7 +139,7 @@ namespace MHServerEmu.Games.Missions.Conditions
 
             if (entity != null)
             {
-                Logger.Warn($"[{Mission.PrototypeName}] EntityDeath OnDeath entity [{entity.PrototypeName}]");
+                Logger.Warn($"[{Mission.PrototypeName}] EntityDeath OnDeath entity [{entity.PrototypeName}] [{Count + 1}/{RequiredCount}]");
                 if (_proto.OpenMissionContribValueDamage != 0.0f)
                     SetContributions(entity.TankingContributors, _proto.OpenMissionContribValueDamage);
                 if (_proto.OpenMissionContribValueTanking != 0.0f)
@@ -150,6 +150,14 @@ namespace MHServerEmu.Games.Missions.Conditions
                     {
                         if (killer == player) killerTagged = true;
                         UpdatePlayerContribution(player);
+                    }
+
+                // HardCode spawn MalekithFriendly instead MalekithOnDeathSummonFriendly
+                if (Mission.PrototypeDataRef == (PrototypeId)7653080694154141685) // CanalPortalActivator = 7653080694154141685,
+                    if (entity.PrototypeDataRef == (PrototypeId)17854169569096045150) // MalekithCh9 = 17854169569096045150,
+                    {
+                        var summonPower = GameDatabase.GetPrototype<SummonPowerPrototype>((PrototypeId)2307265150892711295); // MalekithOnDeathSummonFriendly = 2307265150892711295
+                        EntityHelper.OnDeathSummonFromPowerPrototype(entity, summonPower); 
                     }
             }
 

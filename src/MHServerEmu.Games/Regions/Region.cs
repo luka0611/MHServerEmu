@@ -1413,8 +1413,7 @@ namespace MHServerEmu.Games.Regions
         {
             Logger.Trace($"OnAddedToAOI(): {this} to {player}");
 
-            // Test Load
-            // MissionManager.TestLoadPlayerMissionManager(player);
+            // Initialize player Missions
             player.MissionManager.InitializeForPlayer(player, this);
 
             var manager = Game.EntityManager;
@@ -1465,6 +1464,7 @@ namespace MHServerEmu.Games.Regions
                 metagame?.OnRemovePlayer(player);
             }
 
+            // Destroy player Missions
             player.MissionManager.Shutdown(this);
         }
 
@@ -1582,7 +1582,7 @@ namespace MHServerEmu.Games.Regions
             do
             {
                 index = (index + 1) % size;
-                if ((mask & (1UL << index)) == 0) return;
+                if (MathHelper.EBitTest(mask, index) == false) return;
             }
             while (index != start);
         }
