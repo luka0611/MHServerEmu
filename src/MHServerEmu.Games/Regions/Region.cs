@@ -4,6 +4,7 @@ using MHServerEmu.Core.Collisions;
 using MHServerEmu.Core.Extensions;
 using MHServerEmu.Core.Helpers;
 using MHServerEmu.Core.Logging;
+using MHServerEmu.Core.Memory;
 using MHServerEmu.Core.Serialization;
 using MHServerEmu.Core.System.Time;
 using MHServerEmu.Core.VectorMath;
@@ -300,9 +301,10 @@ namespace MHServerEmu.Games.Regions
 
                             if (regionAffixProto.Eval != null)
                             {
-                                EvalContextData contextData = new(Game);
-                                contextData.SetVar_PropertyCollectionPtr(EvalContext.Default, Properties);
-                                Eval.RunBool(regionAffixProto.Eval, contextData);
+                                using EvalContextData evalContext = ObjectPoolManager.Instance.Get<EvalContextData>();
+                                evalContext.Game = Game;
+                                evalContext.SetVar_PropertyCollectionPtr(EvalContext.Default, Properties);
+                                Eval.RunBool(regionAffixProto.Eval, evalContext);
                             }
                         }
                     }
@@ -346,9 +348,9 @@ namespace MHServerEmu.Games.Regions
                         }
                     }
 
-                    EvalContextData contextData = new();
-                    contextData.SetReadOnlyVar_PropertyCollectionPtr(EvalContext.Default, Properties);
-                    int affixTier = Eval.RunInt(affixTableProto.EvalTier, contextData);
+                    using EvalContextData evalContext = ObjectPoolManager.Instance.Get<EvalContextData>();
+                    evalContext.SetReadOnlyVar_PropertyCollectionPtr(EvalContext.Default, Properties);
+                    int affixTier = Eval.RunInt(affixTableProto.EvalTier, evalContext);
 
                     RegionAffixTableTierEntryPrototype tierEntryProto = affixTableProto.GetByTier(affixTier);
                     if (tierEntryProto != null)
@@ -382,7 +384,7 @@ namespace MHServerEmu.Games.Regions
             // MetaGames create
             if (regionProto.MetaGames.HasValue())
             {
-                PropertyCollection metaCollection = new();
+                using PropertyCollection metaCollection = ObjectPoolManager.Instance.Get<PropertyCollection>();
                 var entryProto = regionProto.GetRegionQueueStateEntry(settings.GameStateId);
                 if (entryProto != null && entryProto.State != PrototypeId.Invalid && entryProto.StateParent != PrototypeId.Invalid)
                 {
@@ -396,12 +398,11 @@ namespace MHServerEmu.Games.Regions
 
                 foreach (var metaGameRef in regionProto.MetaGames)
                 {
-                    EntitySettings metaSettings = new()
-                    {
-                        RegionId = Id,
-                        EntityRef = metaGameRef,
-                        Properties = metaCollection
-                    };
+                    using EntitySettings metaSettings = ObjectPoolManager.Instance.Get<EntitySettings>();
+                    metaSettings.RegionId = Id;
+                    metaSettings.EntityRef = metaGameRef;
+                    metaSettings.Properties = metaCollection;
+
                     var metagame = Game.EntityManager.CreateEntity(metaSettings);
                     if (metagame == null) Logger.Warn($"Initialize(): metagame [{metaGameRef}] == null");
                 }
@@ -1569,7 +1570,8 @@ namespace MHServerEmu.Games.Regions
         public void EvalRegionProperties(EvalPrototype evalProto, PropertyCollection properties)
         {
             if (evalProto == null) return;
-            EvalContextData evalContext = new(Game);
+            using EvalContextData evalContext = ObjectPoolManager.Instance.Get<EvalContextData>();
+            evalContext.Game = Game;
             evalContext.SetVar_PropertyCollectionPtr(EvalContext.Default, properties);
             evalContext.SetReadOnlyVar_PropertyCollectionPtr(EvalContext.Other, Properties);
             Eval.RunBool(evalProto, evalContext);

@@ -1,4 +1,5 @@
 ﻿using MHServerEmu.Core.Logging;
+using MHServerEmu.Core.Memory;
 using MHServerEmu.Core.VectorMath;
 using MHServerEmu.Games.Entities;
 using MHServerEmu.Games.Entities.Inventories;
@@ -53,7 +54,7 @@ namespace MHServerEmu.Games.Loot
                 BlockingCheckFlags.CheckSpawns, 50f, maxDistanceFromSource, out Vector3 dropPosition);
 
             // Create entity
-            EntitySettings settings = new();
+            using EntitySettings settings = ObjectPoolManager.Instance.Get<EntitySettings>();
             settings.EntityRef = itemSpec.ItemProtoRef;
             settings.RegionId = source.RegionLocation.RegionId;
             settings.Position = dropPosition;
@@ -62,12 +63,9 @@ namespace MHServerEmu.Games.Loot
             settings.OptionFlags |= EntitySettingsOptionFlags.IsNewOnServer;    // needed for drop animation
             settings.ItemSpec = itemSpec;
 
-            if (restrictedToPlayerGuid != 0)
-            {
-                PropertyCollection properties = new();
-                properties[PropertyEnum.RestrictedToPlayerGuid] = restrictedToPlayerGuid;
-                settings.Properties = properties;
-            }
+            using PropertyCollection properties = ObjectPoolManager.Instance.Get<PropertyCollection>();
+            settings.Properties = properties;
+            settings.Properties[PropertyEnum.RestrictedToPlayerGuid] = restrictedToPlayerGuid;
 
             Item item = Game.EntityManager.CreateEntity(settings) as Item;
             if (item == null) return Logger.WarnReturn(item, "DropItem(): item == null");
@@ -100,7 +98,7 @@ namespace MHServerEmu.Games.Loot
             Inventory inventory = player.GetInventory(InventoryConvenienceLabel.General);
             if (inventory == null) return Logger.WarnReturn<Item>(null, "GiveItem(): inventory == null");
 
-            EntitySettings settings = new();
+            using EntitySettings settings = ObjectPoolManager.Instance.Get<EntitySettings>();
             settings.EntityRef = itemProtoRef;
             settings.InventoryLocation = new(player.Id, inventory.PrototypeDataRef);
             settings.ItemSpec = CreateItemSpec(itemProtoRef);
@@ -128,7 +126,7 @@ namespace MHServerEmu.Games.Loot
 
             //Logger.Trace($"DropRandomLoot(): Rolling loot table {lootTableProto}");
 
-            LootRollSettings settings = new();
+            using LootRollSettings settings = ObjectPoolManager.Instance.Get<LootRollSettings>();
             settings.Player = player;
             settings.UsableAvatar = player.CurrentAvatar.AvatarPrototype;
             settings.UsablePercent = GameDatabase.LootGlobalsPrototype.LootUsableByRecipientPercent;
@@ -157,7 +155,8 @@ namespace MHServerEmu.Games.Loot
                 {
                     var lootTableProto = missionLoot.LootTableRef.As<LootTablePrototype>();
                     if (lootTableProto == null) continue;
-                    LootRollSettings dropSettings = new(settings);
+                    using LootRollSettings dropSettings = ObjectPoolManager.Instance.Get<LootRollSettings>();
+                    dropSettings.Set(settings);
                     dropSettings.MissionRef = missionLoot.MissionRef;
                     lootTableProto.RollLootTable(dropSettings, resolver);
                 }
@@ -171,7 +170,7 @@ namespace MHServerEmu.Games.Loot
 
             Logger.Info($"--- Loot Table Test - {lootTableProto} ---");
 
-            LootRollSettings settings = new();
+            using LootRollSettings settings = ObjectPoolManager.Instance.Get<LootRollSettings>();
             settings.UsableAvatar = player.CurrentAvatar.AvatarPrototype;
             settings.UsablePercent = GameDatabase.LootGlobalsPrototype.LootUsableByRecipientPercent;
             settings.Level = player.CurrentAvatar.CharacterLevel;

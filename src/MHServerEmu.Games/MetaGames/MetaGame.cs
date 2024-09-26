@@ -1,5 +1,6 @@
 ﻿using MHServerEmu.Core.Extensions;
 using MHServerEmu.Core.Logging;
+using MHServerEmu.Core.Memory;
 using MHServerEmu.Core.Serialization;
 using MHServerEmu.Core.System.Random;
 using MHServerEmu.Games.Common;
@@ -25,6 +26,7 @@ namespace MHServerEmu.Games.MetaGames
     public class MetaGame : Entity
     {
         public static readonly Logger Logger = LogManager.CreateLogger();
+        public static bool Debug = true;
 
         protected RepString _name;
         protected ulong _regionId;
@@ -289,7 +291,8 @@ namespace MHServerEmu.Games.MetaGames
 
             if (stateProto.EvalCanActivate != null)
             {
-                EvalContextData contextData = new(Game);
+                using EvalContextData contextData = ObjectPoolManager.Instance.Get<EvalContextData>();
+                contextData.Game = Game;
                 contextData.SetReadOnlyVar_PropertyCollectionPtr(EvalContext.Other, Region.Properties);
                 contextData.SetReadOnlyVar_EntityPtr(EvalContext.Default, this);
                 if (Eval.RunBool(stateProto.EvalCanActivate, contextData) == false) return false;
@@ -302,7 +305,7 @@ namespace MHServerEmu.Games.MetaGames
         {
             if (CanApplyState(stateRef, skipCooldown) == false) return false;
             var stateProto = GameDatabase.GetPrototype<MetaStatePrototype>(stateRef);
-            if (MissionManager.Debug) Logger.Trace($"ApplyMetaState {GameDatabase.GetFormattedPrototypeName(stateProto.DataRef)} in {GameDatabase.GetFormattedPrototypeName(PrototypeDataRef)}");
+            if (Debug) Logger.Trace($"ApplyMetaState {GameDatabase.GetFormattedPrototypeName(stateProto.DataRef)} in {GameDatabase.GetFormattedPrototypeName(PrototypeDataRef)}");
             RemoveGroups(stateProto.RemoveGroups);
             RemoveStates(stateProto.RemoveStates);
 

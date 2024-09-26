@@ -10,6 +10,9 @@ using MHServerEmu.Core.Extensions;
 using MHServerEmu.Games.Events;
 using MHServerEmu.Games.Events.Templates;
 using MHServerEmu.Games.Properties.Evals;
+using MHServerEmu.Games.Behavior;
+using static MHServerEmu.Games.Missions.MissionManager;
+using MHServerEmu.Core.Memory;
 using MHServerEmu.Games.Regions;
 
 namespace MHServerEmu.Games.Entities
@@ -82,7 +85,8 @@ namespace MHServerEmu.Games.Entities
                 _directApplyToMissileProperties = new();
                 if (missilesData.EvalPropertiesToApply != null)
                 {
-                    EvalContextData evalContext = new(Game);
+                    using EvalContextData evalContext = ObjectPoolManager.Instance.Get<EvalContextData>();
+                    evalContext.Game = Game;
                     evalContext.SetVar_PropertyCollectionPtr(EvalContext.Default, _directApplyToMissileProperties);
                     evalContext.SetReadOnlyVar_PropertyCollectionPtr(EvalContext.Entity, Properties);
                     if (Eval.RunBool(missilesData.EvalPropertiesToApply, evalContext) == false) 
@@ -297,6 +301,22 @@ namespace MHServerEmu.Games.Entities
             PrototypeId waypointRef = Properties[PropertyEnum.WaypointHotspotUnlock];
             if (waypointRef != PrototypeId.Invalid)
                 player.UnlockWaypoint(waypointRef);
+
+            var manager = Game.EntityManager;
+            foreach (var kvp in Properties.IteratePropertyRange(PropertyEnum.HotspotTriggerEntity))
+            {
+                Property.FromParam(kvp.Key, 0, out int triggerEnum);
+                ulong spawnerId = kvp.Value;
+                if (spawnerId != 0)
+                {
+                    var spawner = manager.GetEntity<Spawner>(spawnerId);
+                    if (spawner != null)
+                    {
+                        spawner.Trigger((EntityTriggerEnum)triggerEnum);
+                        ScheduleDestroyEvent(TimeSpan.Zero);
+                    }
+                }
+            }
 
             // TODO Spawner Respawn
 

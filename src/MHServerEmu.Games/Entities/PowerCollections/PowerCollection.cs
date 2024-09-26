@@ -1,8 +1,8 @@
-﻿using System.Collections;
-using Gazillion;
+﻿using Gazillion;
 using MHServerEmu.Core.Extensions;
 using MHServerEmu.Core.Helpers;
 using MHServerEmu.Core.Logging;
+using MHServerEmu.Core.Memory;
 using MHServerEmu.Core.Serialization;
 using MHServerEmu.Games.Common;
 using MHServerEmu.Games.Entities.Avatars;
@@ -14,7 +14,7 @@ using MHServerEmu.Games.Properties;
 
 namespace MHServerEmu.Games.Entities.PowerCollections
 {
-    public class PowerCollection : IEnumerable<KeyValuePair<PrototypeId, PowerCollectionRecord>>
+    public class PowerCollection
     {
         private const int MaxNumRecordsToSerialize = 256;
 
@@ -119,10 +119,11 @@ namespace MHServerEmu.Games.Entities.PowerCollections
 
             return success;
         }
-
-        // IEnumerable implementation
-        public IEnumerator<KeyValuePair<PrototypeId, PowerCollectionRecord>> GetEnumerator() => _powerDict.GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        
+        public SortedDictionary<PrototypeId, PowerCollectionRecord>.Enumerator GetEnumerator()
+        {
+            return _powerDict.GetEnumerator();
+        }
 
         public Power GetPower(PrototypeId powerProtoRef)
         {
@@ -279,6 +280,12 @@ namespace MHServerEmu.Games.Entities.PowerCollections
                 record.Power?.OnOwnerCastSpeedChange();
         }
 
+        public void OnOwnerLevelChange()
+        {
+            foreach (PowerCollectionRecord record in _powerDict.Values)
+                record.Power?.OnOwnerLevelChange();
+        }
+
         public void OnOwnerDeallocate()
         {
             foreach (var kvp in _powerDict)
@@ -426,7 +433,7 @@ namespace MHServerEmu.Games.Entities.PowerCollections
             Power power = _owner.Game.AllocatePower(powerProtoRef);
 
             // Assemble property values passed as arguments into a collection
-            PropertyCollection initializeProperties = new();
+            using PropertyCollection initializeProperties = ObjectPoolManager.Instance.Get<PropertyCollection>();
 
             initializeProperties[PropertyEnum.PowerRank] = indexProps.PowerRank;
             initializeProperties[PropertyEnum.CharacterLevel] = indexProps.CharacterLevel;
