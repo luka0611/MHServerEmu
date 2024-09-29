@@ -126,6 +126,7 @@ namespace MHServerEmu.Games.Regions
         public TuningTable TuningTable { get; private set; }    // Difficulty table
         public bool IsFirstLoaded { get; private set; }
         public bool ToShutdown { get; set; }
+        public int PlayerDeaths { get => _playerDeaths; set => SetPlayerDeaths(value); }
 
         #region Events
 
@@ -148,6 +149,7 @@ namespace MHServerEmu.Games.Regions
         public Event<PlayerEnteredRegionGameEvent> PlayerEnteredRegionEvent = new();
         public Event<PlayerLeftRegionGameEvent> PlayerLeftRegionEvent = new();
         public Event<PlayerRegionChangeGameEvent> PlayerRegionChangeEvent = new();
+        public Event<PlayerDeathRecordedEvent> PlayerDeathRecordedEvent = new();
         public Event<AvatarUsedPowerGameEvent> AvatarUsedPowerEvent = new();
         public Event<PlayerCompletedMissionGameEvent> PlayerCompletedMissionEvent = new();
         public Event<PlayerCompletedMissionObjectiveGameEvent> PlayerCompletedMissionObjectiveEvent = new();
@@ -1597,6 +1599,30 @@ namespace MHServerEmu.Games.Regions
                 _uniqueSelectorIndexes[dataRef] |= 1UL << index;
             else
                 _uniqueSelectorIndexes[dataRef] &= ~(1UL << index);
+        }
+
+        private void SetPlayerDeaths(int value)
+        {
+            _playerDeaths = value;
+            PlayerDeathRecordedEvent.Invoke(new(null));
+        }
+
+        public void OnRecordPlayerDeath(Player player, Avatar avatar, WorldEntity killer)
+        {
+            if (player == null) return;
+
+            /*  TODO PvP
+                PropertyEnum.PvPDeathsDuringMatch
+                PropertyEnum.PvPKillsDuringMatch
+                PropertyEnum.PvPKills
+            */
+
+            if (Properties.HasProperty(PropertyEnum.EndlessLevel))
+                player.Properties.AdjustProperty(1, PropertyEnum.EndlessLevelDeathCount);
+
+            _playerDeaths++;
+
+            PlayerDeathRecordedEvent.Invoke(new(player));
         }
     }
 

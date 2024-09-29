@@ -136,6 +136,13 @@ namespace MHServerEmu.Games.MetaGames.GameModes
             SendPlayUISoundTheme(proto.PlayerEnterAudioTheme, player);
         }
 
+        public void TeleportPlayersToTarget(PrototypeId targetRef)
+        {
+            var players = new PlayerIterator(Region);
+            foreach (var player in players.ToArray())
+                player.PlayerConnection.MoveToTarget(targetRef);
+        }
+
         public void SetModeText(LocaleStringId modeText)
         {
             if (_modeText == modeText) return;
@@ -164,7 +171,7 @@ namespace MHServerEmu.Games.MetaGames.GameModes
         private void SendMessage(IMessage message, Player player = null)
         {
             if (player == null)
-                Game.NetworkManager.BroadcastMessage(message);
+                Game.NetworkManager.SendMessageToInterested(message, Region);
             else
                 player.SendMessage(message);
         }
@@ -217,7 +224,7 @@ namespace MHServerEmu.Games.MetaGames.GameModes
             Game.NetworkManager.SendMessageToMultiple(interestedClients, message.Build());
         }
 
-        private void SendUINotification(PrototypeId uiNotificationRef)
+        public void SendUINotification(PrototypeId uiNotificationRef)
         {
             if (uiNotificationRef == PrototypeId.Invalid) return;
             SendMessage(NetMessageUINotificationMessage.CreateBuilder().SetUiNotificationRef((ulong)uiNotificationRef).Build());
@@ -272,6 +279,16 @@ namespace MHServerEmu.Games.MetaGames.GameModes
             }
         }
 
+        public void SendPvEInstanceDeathUpdate(int current)
+        {
+            var message = NetMessagePvEInstanceDeathUpdate.CreateBuilder()
+                 .SetMetaGameId(MetaGame.Id)
+                 .SetCurrentDeathCount((ulong)current)
+                 .Build();
+
+            SendMessage(message);
+        }
+
         protected void SendStartPvPTimer(TimeSpan startTime, TimeSpan endTime, TimeSpan lowTime, TimeSpan criticalTime, 
             Player player = null, LocaleStringId labelOverride = LocaleStringId.Blank)
         {
@@ -306,6 +323,7 @@ namespace MHServerEmu.Games.MetaGames.GameModes
 
         private void ScheduleActiveGoalRepeat(int timeMs)
         {
+            if (timeMs == 0) return;
             var scheduler = Game.GameEventScheduler;
             if (scheduler == null) return;
             TimeSpan timeOffset = TimeSpan.FromMilliseconds(timeMs);

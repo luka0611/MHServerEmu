@@ -259,6 +259,10 @@ namespace MHServerEmu.Games.Entities
 
         public virtual void OnKilled(WorldEntity killer, KillFlags killFlags, WorldEntity directKiller)
         {
+            var worldEntityProto = WorldEntityPrototype;
+            CancelScheduledLifespanExpireEvent();
+            EntityActionComponent?.CancelAll();
+
             bool notMissile = this is not Missile;
             // HACK: LOOT AND XP
             if (this is Agent agent && notMissile && agent is not Avatar && agent.IsTeamUpAgent == false)
@@ -273,18 +277,11 @@ namespace MHServerEmu.Games.Entities
                 Region?.EntityDeadEvent.Invoke(new(this, killer, player));
             }
 
-            // HACK: Schedule respawn in public zones using SpawnSpec
-            /*if (RegionLocation.Region != null && RegionLocation.Region.IsPublic && SpawnSpec != null)
-            {
-                Logger.Trace($"Respawn scheduled for {this}");
-                EventPointer<TEMP_SpawnEntityEvent> eventPointer = new();
-                Game.GameEventScheduler.ScheduleEvent(eventPointer, Game.CustomGameOptions.WorldEntityRespawnTime);
-                eventPointer.Get().Initialize(SpawnSpec);
-            }*/
-
             // Set death state properties
             Properties[PropertyEnum.IsDead] = true;
-            Properties[PropertyEnum.NoEntityCollide] = true;
+
+            if (worldEntityProto.RemoveNavInfluenceOnKilled)
+                Properties[PropertyEnum.NoEntityCollide] = true;
 
             // Send kill message to clients
             var killMessage = NetMessageEntityKill.CreateBuilder()
@@ -295,10 +292,9 @@ namespace MHServerEmu.Games.Entities
 
             Game.NetworkManager.SendMessageToInterested(killMessage, this, AOINetworkPolicyValues.AOIChannelProximity);
 
-            EntityActionComponent?.CancelAll();
 
             // Schedule destruction
-            int removeFromWorldTimerMS = WorldEntityPrototype.RemoveFromWorldTimerMS;
+            int removeFromWorldTimerMS = worldEntityProto.RemoveFromWorldTimerMS;
             if (removeFromWorldTimerMS < 0)     // -1 means entities are not destroyed (e.g. avatars)
                 return;
 
@@ -351,6 +347,8 @@ namespace MHServerEmu.Games.Entities
         {
             if (Game == null) return;
 
+            SpawnSpec?.Destroy();
+
             ExitWorld();
             if (IsDestroyed == false)
             {
@@ -381,10 +379,21 @@ namespace MHServerEmu.Games.Entities
 
             Physics.AcquireCollisionId();
 
-            if (ChangeRegionPosition(position, orientation, ChangePositionFlags.DoNotSendToClients | ChangePositionFlags.SkipInterestUpdate) == ChangePositionResult.PositionChanged)
+            ChangePositionResult result = ChangeRegionPosition(position, orientation,
+                ChangePositionFlags.Update | ChangePositionFlags.DoNotSendToServer | ChangePositionFlags.SkipInterestUpdate | ChangePositionFlags.EnterWorld);
+
+            if (result == ChangePositionResult.PositionChanged)
+            {
+                CancelExitWorldEvent();
+
+                ApplyState(Properties[PropertyEnum.EntityState]);
+
                 OnEnteredWorld(settings);
+            }
             else
+            {
                 ClearWorldLocation();
+            }
 
             SetStatus(EntityStatus.EnteringWorld, false);
 
@@ -1227,6 +1236,7 @@ namespace MHServerEmu.Games.Entities
             // Calculate health difference based on all damage types and healing
             // NOTE: Health can be > 2147483647, so we have to use 64-bit integers here to avoid overflows
             long health = Properties[PropertyEnum.Health];
+            long startHealth = health;
             float healthDelta = 0f;
 
             if (powerResults.Flags.HasFlag(PowerResultFlags.InstantKill))
@@ -1251,25 +1261,111 @@ namespace MHServerEmu.Games.Entities
             WorldEntity powerUser = Game.EntityManager.GetEntity<WorldEntity>(powerResults.PowerOwnerId);
             WorldEntity ultimatePowerUser = Game.EntityManager.GetEntity<WorldEntity>(powerResults.UltimateOwnerId);
 
+            long adjustHealth = health - startHealth;
+
+            var avatar = ultimatePowerUser?.GetMostResponsiblePowerUser<Avatar>();
+
+            var region = Region;
+
+            if (region != null)
+            {
+                var player = avatar?.GetOwnerOfType<Player>();
+                bool isDodged = powerResults.TestFlag(PowerResultFlags.Dodged);
+                region.AdjustHealthEvent.Invoke(new(this, ultimatePowerUser, player, adjustHealth, isDodged));
+            }
+
             if (health <= 0)
             {
+                if (this is Avatar killedAvatar)
+                {
+                    var killedPlayer = GetOwnerOfType<Player>();
+                    region?.OnRecordPlayerDeath(killedPlayer, killedAvatar, ultimatePowerUser);
+                }
+
+                if (powerResults.PowerOwnerId != powerResults.TargetId)
+                {
+                    ultimatePowerUser?.TriggerEntityActionEvent(EntitySelectorActionEventType.OnKilledOther);
+
+                    if (IsControlledEntity == false)
+                        TriggerOnDeath(powerResults, ultimatePowerUser);
+                }
+
                 Kill(ultimatePowerUser, KillFlags.None, powerUser);
+                TriggerEntityActionEvent(EntitySelectorActionEventType.OnGotKilled);
             }
             else
             {
                 Properties[PropertyEnum.Health] = health;
                 if (powerResults.Flags.HasFlag(PowerResultFlags.Hostile))
                     OnGotHit(ultimatePowerUser);
+
+                TriggerEntityActionEvent(EntitySelectorActionEventType.OnGotDamaged);
             }
 
+            if (this is Agent agent && adjustHealth < 0)
+                agent.AIController?.OnAIGotDamaged(ultimatePowerUser, adjustHealth);
+
             return true;
+        }
+
+        private void TriggerOnDeath(PowerResults powerResults, WorldEntity killer)
+        {
+            // TODO Rewrite this
+
+            if (this is not Agent) return;
+            Power power = null;
+
+            // Get OnDeath ProcPower
+            foreach (var kvp in PowerCollection)
+            {
+                var proto = kvp.Value.PowerPrototype;
+                if (proto.Activation != PowerActivationType.Passive) continue;
+
+                string protoName = kvp.Key.GetNameFormatted();
+                if (protoName.Contains("OnDeath"))
+                {
+                    power = kvp.Value.Power;
+                    break;
+                }
+            }
+
+            if (power == null) return;
+
+            // Get OnDead power
+            var conditions = power.Prototype.AppliesConditions;
+            if (conditions.Count != 1) return;
+            var conditionProto = conditions[0].Prototype as ConditionPrototype;
+
+            // Get summon power
+            SummonPowerPrototype summonPower = null;
+            foreach (var kvp in conditionProto.Properties.IteratePropertyRange(PropertyEnum.Proc))
+            {
+                Property.FromParam(kvp.Key, 0, out int procEnum);
+                if ((ProcTriggerType)procEnum != ProcTriggerType.OnDeath) continue;
+                Property.FromParam(kvp.Key, 1, out PrototypeId summonPowerRef);
+                summonPower = GameDatabase.GetPrototype<SummonPowerPrototype>(summonPowerRef);
+                if (summonPower != null) break;
+            }
+
+            if (summonPower != null) EntityHelper.OnDeathSummonFromPowerPrototype(this, summonPower);
+        }
+
+        public void TriggerEntityActionEventAlly(EntitySelectorActionEventType eventType)
+        {
+            if (SpawnGroup == null) return;
+            foreach (var spec in SpawnGroup.Specs)
+                spec.ActiveEntity?.TriggerEntityActionEvent(eventType);
         }
 
         public virtual void OnGotHit(WorldEntity attacker)
         {
             TriggerEntityActionEvent(EntitySelectorActionEventType.OnGotAttacked);
+            TriggerEntityActionEventAlly(EntitySelectorActionEventType.OnAllyGotAttacked);
             if (attacker != null && attacker.GetMostResponsiblePowerUser<Avatar>() != null)
+            {
                 TriggerEntityActionEvent(EntitySelectorActionEventType.OnGotAttackedByPlayer);
+                TriggerEntityActionEventAlly(EntitySelectorActionEventType.OnAllyGotAttackedByPlayer);
+            }
         }
 
         public string PowerCollectionToString()
@@ -2086,18 +2182,10 @@ namespace MHServerEmu.Games.Entities
         public override SimulateResult SetSimulated(bool simulated)
         {
             SimulateResult result = base.SetSimulated(simulated);
-            
+
             if (result != SimulateResult.None && Locomotor != null)
             {
                 ModifyCollectionMembership(EntityCollection.Locomotion, IsSimulated);
-                if (Region != null)
-                {
-                    if (simulated)
-                        Region.EntitySetSimulatedEvent.Invoke(new(this));
-                    else
-                        Region.EntitySetUnSimulatedEvent.Invoke(new(this));
-                }
-                SpawnSpec?.OnUpdateSimulation();
             }
             if (result == SimulateResult.Set)
             {
@@ -2128,6 +2216,18 @@ namespace MHServerEmu.Games.Entities
             else if (result == SimulateResult.Clear)
             {
                 EndAllPowers(true);
+            }
+
+            if (result != SimulateResult.None)
+            {
+                if (Region != null)
+                {
+                    if (simulated)
+                        Region.EntitySetSimulatedEvent.Invoke(new(this));
+                    else
+                        Region.EntitySetUnSimulatedEvent.Invoke(new(this));
+                }
+                SpawnSpec?.OnUpdateSimulation();
             }
 
             return result;
@@ -2185,7 +2285,8 @@ namespace MHServerEmu.Games.Entities
         {
             if (IsControlledEntity || EntityActionComponent == null || IsInWorld == false) return false;
 
-            // TODO action.SpawnerTrigger
+            if (action.SpawnerTrigger != PrototypeId.Invalid)
+                TriggerLocalSpawner(action.SpawnerTrigger);
 
             var aiOverride = action.PickAIOverride(Game.Random);
             if (aiOverride != null)
@@ -2215,6 +2316,17 @@ namespace MHServerEmu.Games.Entities
             }
 
             return true;
+        }
+
+        public void TriggerLocalSpawner(PrototypeId spawnerTrigger)
+        {
+            var spawnerTriggerProto = GameDatabase.GetPrototype<EntityActionSpawnerTriggerPrototype>(spawnerTrigger);
+            if (spawnerTriggerProto == null) return;
+
+            if (spawnerTriggerProto.EnableClusterLocalSpawner && SpawnGroup != null) 
+                foreach (var spec in SpawnGroup.Specs)
+                    if (spec.ActiveEntity is Spawner spawner)
+                        spawner.ScheduleEnableTrigger();
         }
 
         public void ShowOverheadText(LocaleStringId idText, float duration)

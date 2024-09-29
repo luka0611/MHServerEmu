@@ -65,6 +65,11 @@ namespace MHServerEmu.Games.Entities
             // InitPowersCollection
             InitLocomotor(settings.LocomotorHeightOverride);
 
+            // Wait in dormant while play start animation
+            if (agentProto.WakeRange > 0.0f || agentProto.WakeDelayMS > 0) SetDormant(true);
+
+            Properties[PropertyEnum.InitialCharacterLevel] = CharacterLevel;
+
             // When Gazillion implemented DCL, it looks like they made it switchable at first (based on Eval::runIsDynamicCombatLevelEnabled),
             // so all agents need to have their default non-DCL health base curves overriden with new DCL ones.
             if (CanBePlayerOwned() == false)
@@ -848,6 +853,9 @@ namespace MHServerEmu.Games.Entities
 
             if (result == SimulateResult.Set)
             {
+                if (AgentPrototype.WakeRange <= 0.0f) SetDormant(false);
+                if (IsDormant == false) TryAutoActivatePowersInCollection();
+
                 TriggerEntityActionEvent(EntitySelectorActionEventType.OnSimulated);
             }
             else if (result == SimulateResult.Clear)
@@ -985,9 +993,10 @@ namespace MHServerEmu.Games.Entities
             // AI
             // if (TestAI() == false) return;
 
+            var behaviorProfile = AgentPrototype?.BehaviorProfile;
+
             if (AIController != null)
-            {
-                var behaviorProfile = AgentPrototype?.BehaviorProfile;
+            {                
                 if (behaviorProfile == null) return;
                 AIController.Initialize(behaviorProfile, null, null);
             }
@@ -998,7 +1007,10 @@ namespace MHServerEmu.Games.Entities
                 AIController.OnAIEnteredWorld();
                 ActivateAI();
             }
-            
+
+            if (behaviorProfile != null)
+                EquipPassivePowers(behaviorProfile.EquippedPassivePowers);
+
             if (IsSimulated && Properties.HasProperty(PropertyEnum.AIPowerOnSpawn))
             {
                 PrototypeId startPower = Properties[PropertyEnum.AIPowerOnSpawn];
@@ -1015,6 +1027,19 @@ namespace MHServerEmu.Games.Entities
 
             if (AIController == null)
                 EntityActionComponent?.InitActionBrain();
+        }
+
+        private void EquipPassivePowers(PrototypeId[] passivePowers)
+        {
+            if (passivePowers.IsNullOrEmpty()) return;
+            foreach(var powerRef in passivePowers)
+            {
+                var powerProto = GameDatabase.GetPrototype<PowerPrototype>(powerRef);
+                if (powerProto == null || powerProto.Activation != PowerActivationType.Passive) continue;
+                int rank = Properties[PropertyEnum.PowerRank];
+                PowerIndexProperties indexProps = new(rank, CharacterLevel, CombatLevel);
+                AssignPower(powerRef, indexProps);
+            }
         }
 
         public override void OnExitedWorld()
@@ -1170,7 +1195,8 @@ namespace MHServerEmu.Games.Entities
         {
             if (IsControlledEntity || EntityActionComponent == null) return false;
 
-            // TODO action.SpawnerTrigger
+            if (action.SpawnerTrigger != PrototypeId.Invalid)
+                TriggerLocalSpawner(action.SpawnerTrigger);
 
             if (action.AttributeActions.HasValue())
                 foreach (var attr in action.AttributeActions)
@@ -1378,12 +1404,8 @@ namespace MHServerEmu.Games.Entities
             var prototype = AgentPrototype;
             if (prototype != null && prototype.PlayDramaticEntrance == DramaticEntranceType.Once)
                 Properties[PropertyEnum.DramaticEntrancePlayedOnce] = true;
-            var region = Region;
-            if (region != null)
-            {
-                var evt = new EntityLeaveDormantGameEvent(this);
-                region.EntityLeaveDormantEvent.Invoke(evt);
-            }
+
+            Region?.EntityLeaveDormantEvent.Invoke(new(this));
             TryAutoActivatePowersInCollection();
         }
 
