@@ -3,6 +3,7 @@ using MHServerEmu.Core.Collisions;
 using MHServerEmu.Core.Helpers;
 using MHServerEmu.Core.Logging;
 using MHServerEmu.Core.Memory;
+using MHServerEmu.Core.VectorMath;
 using MHServerEmu.DatabaseAccess.Models;
 using MHServerEmu.Frontend;
 using MHServerEmu.Games;
@@ -11,10 +12,14 @@ using MHServerEmu.Games.Entities.Avatars;
 using MHServerEmu.Games.Events;
 using MHServerEmu.Games.Events.Templates;
 using MHServerEmu.Games.GameData;
+using MHServerEmu.Games.GameData.Prototypes;
 using MHServerEmu.Games.Navi;
 using MHServerEmu.Games.Network;
+using MHServerEmu.Games.Populations;
+using MHServerEmu.Games.Properties;
+using MHServerEmu.Games.Regions;
 using MHServerEmu.Grouping;
-using System.Reflection.Metadata.Ecma335;
+using System;
 
 namespace MHServerEmu.Commands.Implementations
 {
@@ -111,6 +116,39 @@ namespace MHServerEmu.Commands.Implementations
             return $"NaviMesh saved as {filename}";
         }
 
+        [Command("sweep2", "Usage: debug sweep2 [EntityId1] [EntityId2]", AccountUserLevel.User)]
+        public string Sweep2(string[] @params, FrontendClient client)
+        {
+            if (client == null) return "You can only invoke this command from the game.";
+            if (@params.Length == 0) return "Invalid arguments. Type 'help debug sweep2' to get help.";
+
+            if (ulong.TryParse(@params[0], out ulong entityId1) == false)
+                return $"Failed to parse EntityId1 {@params[0]}";
+
+            if (ulong.TryParse(@params[1], out ulong entityId2) == false)
+                return $"Failed to parse EntityId2 {@params[1]}";
+
+            CommandHelper.TryGetGame(client, out Game game);
+            var manager = game.EntityManager;
+
+            var entity1 = manager.GetEntity<WorldEntity>(entityId1);
+            if (entity1 == null) return $"No entity found for {entityId1}";
+
+            var entity2 = manager.GetEntity<WorldEntity>(entityId2);
+            if (entity2 == null) return $"No entity found for {entityId2}";
+
+            var from = entity1.RegionLocation.Position;
+            Vector3 outPos = entity2.RegionLocation.Position;
+            var locomotor = entity1.Locomotor;
+
+            Vector3? resultNorm = null;
+            locomotor.SweepFromTo(from, outPos, ref outPos, ref resultNorm);
+
+            EntityHelper.CrateOrb(EntityHelper.TestOrb.Blue, outPos, entity1.Region);
+
+            return $"Entities\n [{entity1.PrototypeName}]\n [{entity2.PrototypeName}]\nPosition: {outPos}";
+        }
+
         [Command("isblocked", "Usage: debug isblocked [EntityId1] [EntityId2]", AccountUserLevel.User)]
         public string IsBlocked(string[] @params, FrontendClient client)
         {
@@ -135,6 +173,42 @@ namespace MHServerEmu.Commands.Implementations
             Bounds bounds = entity1.Bounds;
             bool isBlocked = Games.Regions.Region.IsBoundsBlockedByEntity(bounds, entity2, BlockingCheckFlags.CheckSpawns);
             return $"Entities\n [{entity1.PrototypeName}]\n [{entity2.PrototypeName}]\nIsBlocked: {isBlocked}";
+        }
+
+        [Command("spawnPop", "Usage: debug spawnPop", AccountUserLevel.User)]
+        public string SpawnPop(string[] @params, FrontendClient client)
+        {
+            if (client == null) return "You can only invoke this command from the game.";
+
+            CommandHelper.TryGetPlayerConnection(client, out PlayerConnection playerConnection);
+            Avatar avatar = playerConnection.Player.CurrentAvatar;            
+
+            var region = avatar.Region;
+            var area = avatar.Area;
+
+            var spawnLocation = new SpawnLocation(region, area);
+            var objectProto = GameDatabase.GetPrototype<PopulationObjectPrototype>((PrototypeId)15844212486170679947); // CyborgPopcornGunArmCluster 
+
+            PopulationObject populationObject = new()
+            {
+                SpawnEvent = null,
+                IsMarker = false,
+                MarkerRef = PrototypeId.Invalid,
+                MissionRef = PrototypeId.Invalid,
+                Random = avatar.Game.Random,
+                Critical = true,
+                Time = TimeSpan.Zero,
+                Properties = new(),
+                SpawnFlags = SpawnFlags.IgnoreSimulated,
+                Object = objectProto,
+                SpawnLocation = spawnLocation,
+            };
+
+            populationObject.SpawnInCell(avatar.Cell);
+
+            var group = region.PopulationManager.GetSpawnGroup(populationObject.SpawnGroupId);            
+
+            return $"SpawnPop {objectProto.DataRef.GetNameFormatted()} in {group.Transform.Translation}";
         }
 
         [Command("near", "Usage: debug near [radius]. Default radius 100.", AccountUserLevel.User)]
@@ -215,6 +289,11 @@ namespace MHServerEmu.Commands.Implementations
             ChatHelper.SendMetagameMessageSplit(client, entity.Properties.ToString(), false);
             if (entity is WorldEntity worldEntity)
             {
+                if (@params.Length > 1)
+                {
+                    if (@params[1] == "N") worldEntity.Properties[PropertyEnum.AllianceOverride] = (PrototypeId)15452561577132953366; // NPCNeutral = 15452561577132953366,
+                    else if (@params[1] == "E") worldEntity.Properties[PropertyEnum.AllianceOverride] = (PrototypeId)7291783664234008000; // Enemies = 7291783664234008000,
+                }
                 ChatHelper.SendMetagameMessageSplit(client, worldEntity.Bounds.ToString(), false);
                 ChatHelper.SendMetagameMessageSplit(client, worldEntity.PowerCollectionToString(), false);
             }

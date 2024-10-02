@@ -18,14 +18,12 @@ namespace MHServerEmu.Games.Navi
         private float _width;
 
         public List<NaviPathNode> PathNodeList { get => _pathNodes; }
-        public bool IsComplete { get => IsValid ? GetCurrentGoalNodeIndex() == _pathNodes.Count : true; }
-        public bool IsCurrentGoalNodeLastNode 
-        { 
-            get
-            {
-                if (IsValid == false) return false;
-                return (_currentNodeIndex != _pathNodes.Count) && (_currentNodeIndex + 1 == _pathNodes.Count - 1);
-            }
+        public bool IsComplete { get => IsValid ? GetCurrentGoalNodeIndex() >= _pathNodes.Count : true; }
+        public bool IsCurrentGoalNodeLastNode { 
+            get => IsValid 
+                && _currentNodeIndex >= 0 
+                && _currentNodeIndex < _pathNodes.Count 
+                && (_currentNodeIndex + 1 == _pathNodes.Count - 1); 
         }
 
         public NaviPath()
@@ -143,7 +141,7 @@ namespace MHServerEmu.Games.Navi
         {
             float distance = 0.0f;
             int nodeIndex = GetCurrentGoalNodeIndex();
-            if (nodeIndex == _pathNodes.Count) return distance;
+            if (nodeIndex >= _pathNodes.Count) return distance;
 
             distance += Vector3.Distance2D(currentPos, _pathNodes[nodeIndex].Vertex);
             var nextIndex = nodeIndex + 1;
@@ -229,19 +227,19 @@ namespace MHServerEmu.Games.Navi
         public NaviPathNode GetCurrentGoalNode()
         {
             int currentIndex = GetCurrentGoalNodeIndex();
-            if (currentIndex == _pathNodes.Count) return default;
+            if (currentIndex >= _pathNodes.Count) return default;
             return _pathNodes[currentIndex];
         }
 
         public int GetCurrentGoalNodeIndex()
         {
-            if (_currentNodeIndex == _pathNodes.Count) return _currentNodeIndex;
+            if (_currentNodeIndex >= _pathNodes.Count) return _pathNodes.Count;
             return _currentNodeIndex + 1;
         }
 
         public Vector3 GetCurrentGoalPosition(Vector3 position)
         {
-            if (_currentNodeIndex == _pathNodes.Count) return position;
+            if (_currentNodeIndex >= _pathNodes.Count) return position;
             return GetNodeGoalPosition(GetCurrentGoalNode(), position);
         }
 
@@ -361,7 +359,7 @@ namespace MHServerEmu.Games.Navi
 
             TryAdvanceGoalNode(fromPoint);
             int goalNodeIndex = GetCurrentGoalNodeIndex();
-            if (goalNodeIndex != _pathNodes.Count)
+            if (goalNodeIndex < _pathNodes.Count)
             {
                 var goalNode = _pathNodes[goalNodeIndex];
                 if (goalNode.VertexSide == NaviSide.Point)
@@ -372,7 +370,7 @@ namespace MHServerEmu.Games.Navi
                     if (distanceSq < moveDistanceSq)
                     {
                         movePosition = goalNode.Vertex;
-                        if (goalNodeIndex + 1 == _pathNodes.Count)
+                        if (goalNodeIndex + 1 >= _pathNodes.Count)
                             _currentNodeIndex = _pathNodes.Count;
                     }
                     else
@@ -405,7 +403,7 @@ namespace MHServerEmu.Games.Navi
         {
             int goalIndex = GetCurrentGoalNodeIndex();
             bool next;
-            while (goalIndex != -1 && goalIndex < _pathNodes.Count)
+            while (goalIndex >= 0 && goalIndex < _pathNodes.Count)
             {
                 NaviPathNode goalNode = _pathNodes[goalIndex];
                 next = false;

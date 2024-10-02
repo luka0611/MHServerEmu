@@ -63,6 +63,7 @@ namespace MHServerEmu.Games.Entities.Locomotion
         public bool IsStuck { get => HasPath && !IsPathComplete() && !IsEnabled; }
         public NaviPathResult LastGeneratedPathResult { get => _generatedPath.PathResult; }
         public static LocomotionOptions DefaultFollowEntityLocomotionOptions => new(TimeSpan.FromSeconds(1.0), 0, 0.0f, 0.0f, 0, 0);
+
         private bool _hasOrientationSyncState;
         private TimeSpan _syncStateTime;
         private Orientation _syncOrientation;
@@ -72,7 +73,6 @@ namespace MHServerEmu.Games.Entities.Locomotion
         private float _syncSpeed;
         private int _syncPathGoalNodeIndex;
         private int _syncAttemptsFailed;
-
 
         private int _giveUpRepathCount;
         private float _giveUpDistanceThreshold;
@@ -97,6 +97,8 @@ namespace MHServerEmu.Games.Entities.Locomotion
         private float _incompleteDistance;
         private TimeSpan _updateNavigationInfluenceTime;
         private float _rotationDirection;
+        private Vector3 _lastStuckPosition;
+        private int _stuckTry;
 
         public Locomotor()
         {
@@ -489,7 +491,10 @@ namespace MHServerEmu.Games.Entities.Locomotion
                     else
                         return true;
                 }
-                return false;
+                else
+                {
+                    return false; // IsStuckInPos();
+                }
             }
             return true;
         }
@@ -868,9 +873,12 @@ namespace MHServerEmu.Games.Entities.Locomotion
                 }
             }
 
-            float finalDistance = Vector3.Distance2D(finalPosition, _owner.RegionLocation.Position) - _owner.Bounds.Radius;
-            if (repath && (finalDistance < 16.0f) && _generatedPath.Path.IsValid && !_generatedPath.Path.IsComplete)
-                repath = false;
+            if (repath)
+            {
+                float finalDistance = Vector3.Distance2D(finalPosition, _owner.RegionLocation.Position) - _owner.Bounds.Radius;
+                if (finalDistance < 16.0f && _generatedPath.Path.IsValid && !_generatedPath.Path.IsComplete)
+                    repath = false;
+            }
 
             if (repath)
             {
@@ -924,6 +932,8 @@ namespace MHServerEmu.Games.Entities.Locomotion
                 LocomotionState.Height = options.MoveHeight;
                 LocomotionState.LocomotionFlags |= options.Flags | LocomotionFlags.IsLocomoting;
                 LocomotionState.PathNodes = _generatedPath.Path.PathNodeList;
+                _lastStuckPosition = _owner.RegionLocation.Position;
+                _stuckTry = 0;
             }
             SetEnabled(success);
             return success;
@@ -1423,6 +1433,16 @@ namespace MHServerEmu.Games.Entities.Locomotion
         public override string ToString()
         {
             return $"Locomotor m_owner:({_owner})";
+        }
+
+        public bool IsStuckInPos()
+        {
+            if (_owner.RegionLocation.Position == _lastStuckPosition) _stuckTry++;
+            else _stuckTry = 0;
+
+            _lastStuckPosition = _owner.RegionLocation.Position;
+
+            return _stuckTry > 1;
         }
     }
 

@@ -7,7 +7,8 @@ namespace MHServerEmu.Games.Navi
 {
     public class NaviPathGenerator
     {
-        private static readonly Logger Logger = LogManager.CreateLogger();
+        private static readonly Logger Logger = LogManager.CreateLogger(); 
+        private const bool Test = true;
         private NaviMesh _naviMesh;
         private float _radius;
         private float _width;
@@ -19,13 +20,15 @@ namespace MHServerEmu.Games.Navi
         private NaviTriangle _startTriangle;
         private NaviTriangle _goalTriangle;
         private NaviPoint _goalPoint;
-        private readonly FixedPriorityQueue<NaviPathSearchState> _searchStateQueue;
+        private readonly FixedPriorityQueue<NaviPathSearchState> _searchStateQueue; 
+        public NaviSvgHelper Svg;
 
         public NaviPathGenerator(NaviMesh naviMesh)
         {
             // _navi = naviMesh.NaviSystem; // not used
             _naviMesh = naviMesh;
             _searchStateQueue = new(128);
+            if (Test) Svg = new(naviMesh.NaviCdt);
         }
 
         public static void GenerateDirectMove(Vector3 startPosition, Vector3 goalPosition, List<NaviPathNode> pathNodes)
@@ -75,7 +78,18 @@ namespace MHServerEmu.Games.Navi
 
         private NaviPathResult GeneratePathInternal(List<NaviPathNode> outPathNodes, bool skipGen)
         {
-            if (_startTriangle == null || _goalTriangle == null) return NaviPathResult.FailedTriangle;
+            if (_startTriangle == null || _goalTriangle == null) return NaviPathResult.FailedTriangle; 
+            
+            if (Test)
+            {
+                Svg.AddСomment("_startTriangle");
+                Svg.AddTriangle(_startTriangle);
+                Svg.AddCircle(_startPosition, 10, "#00FFFF", "#00FFFF");
+                Svg.AddСomment("_goalPosition");
+                Svg.AddTriangle(_goalTriangle);
+                Svg.AddCircle(_goalPosition, 10, "#7B68EE", "#7B68EE");
+            }
+
             _startPosition = NaviUtil.ProjectToPlane(_startTriangle, _startPosition);
             _goalPosition = NaviUtil.ProjectToPlane(_goalTriangle, _goalPosition);
 
@@ -206,13 +220,34 @@ namespace MHServerEmu.Games.Navi
             {
                 pathFound = true;
                 if (skipGen == false)
+                {
+                    if (Test) Svg.AddСomment("GenerateDirectMove");
                     GenerateDirectMove(_startPosition, _goalPosition, outPathNodes);
+                }
             }
 
             if (_goalPoint != null) _goalPoint.InfluenceRadius = influenceRadius;
-            
-            if (pathFound) return NaviPathResult.Success;
-            else if (incompletePath) return NaviPathResult.IncompletedPath;
+
+            if (pathFound)
+            {
+                if (Test)
+                {
+                    Svg.AddСomment("pathFound");
+                    Svg.AddPath(outPathNodes);
+                    Svg.SaveToFile($"Path-{DateTime.Now.ToString("mm-ss-fff")}.svg");
+                }
+                return NaviPathResult.Success;
+            }
+            else if (incompletePath)
+            {
+                if (Test)
+                {
+                    Svg.AddСomment("incompletePath");
+                    Svg.AddPath(outPathNodes);
+                    Svg.SaveToFile($"IncompletedPath-{DateTime.Now.ToString("mm-ss-fff")}.svg");
+                }
+                return NaviPathResult.IncompletedPath;
+            }
             else return NaviPathResult.FailedNoPathFound;
         }
 
@@ -231,7 +266,8 @@ namespace MHServerEmu.Games.Navi
                 if (topState.Edge == edge) continue;
 
                 triangle = edge.OpposedTriangle(topState.Triangle);
-                
+                if (Test) Svg.AddTriangle(triangle);
+
                 if (triangle == null || !triangle.TestPathFlags(_pathFlags) || NaviEdge.IsBlockingDoorEdge(edge, _pathFlags)) 
                     continue;
 
@@ -417,12 +453,17 @@ namespace MHServerEmu.Games.Navi
 
         private bool SimpleTestFunnelVertexClearOfObstacles(NaviPoint point, NaviTriangle triangle, float radiusSq, PathFlags pathFlags)
         {
-            if (point.InfluenceRef > 0) return false; 
+            if (point.InfluenceRef > 0)
+            {
+                if (Test) Svg.AddCircle(point.Pos, point.InfluenceRadius);
+                return false;
+            }
 
             NaviTriangle nextTriangle = triangle;
             do
             {
                 if (nextTriangle == null || nextTriangle.TestPathFlags(pathFlags) == false) return false;
+                if (Test) Svg.AddTriangle(nextTriangle);
                 var edge = nextTriangle.OpposedEdge(point);
                 float distanceSq = Segment.SegmentPointDistanceSq(edge.Points[0].Pos, edge.Points[1].Pos, point.Pos);
                 if (distanceSq < radiusSq) return false;
