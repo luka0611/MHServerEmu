@@ -104,7 +104,7 @@ namespace MHServerEmu.Games.Entities
             }
 
             // Newly created entities are always new on server and not something that simply entered a client's AOI
-            settings.OptionFlags |= EntitySettingsOptionFlags.IsNewOnServer;
+            if (settings.DebugSpawn == false) settings.OptionFlags |= EntitySettingsOptionFlags.IsNewOnServer;
 
             // Create the entity
             Entity entity;
