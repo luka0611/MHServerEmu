@@ -63,6 +63,9 @@ namespace MHServerEmu.Games.Entities
             PrototypeId summonerRef = summonPowerProto.SummonEntityContexts[0].SummonEntity;
             var summonerProto = entity.WorldEntityPrototype;
 
+            var summonProto = GameDatabase.GetPrototype<AgentPrototype>(summonerRef);
+            if (summonProto == null) return; // Only Agent can be spawn, skip hotspot
+
             using (EntitySettings settings = ObjectPoolManager.Instance.Get<EntitySettings>())
             using (PropertyCollection properties = ObjectPoolManager.Instance.Get<PropertyCollection>())
             {
@@ -103,6 +106,7 @@ namespace MHServerEmu.Games.Entities
             if (summonPowerProto.SummonEntityContexts.IsNullOrEmpty()) return;
             PrototypeId summonerRef = summonPowerProto.SummonEntityContexts[0].SummonEntity;
             var summonerProto = GameDatabase.GetPrototype<AgentPrototype>(summonerRef);
+            if (summonerProto == null) return;
 
             Agent summoner;
             using (EntitySettings settings = ObjectPoolManager.Instance.Get<EntitySettings>())
