@@ -739,14 +739,37 @@ namespace GameDatabaseBrowser
                     {
                         if (subPropertyInfo is Array)
                         {
-                            string itemName = subPropInfo.ToString();
-                            if (subPropInfo is EntityMarkerPrototype marker) itemName = GameDatabase.GetFormattedPrototypeName(GameDatabase.GetDataRefByPrototypeGuid(marker.EntityGuid));
+                            string itemName;
+
+                            switch (subPropInfo)
+                            {
+                                case EntityMarkerPrototype marker:
+                                    itemName = GameDatabase.GetDataRefByPrototypeGuid(marker.EntityGuid).GetNameFormatted();
+                                    break;
+
+                                case MissionObjectivePrototype missionObjective:
+                                    string objectiveName = LocaleManager.Instance.CurrentLocale.GetLocaleString(missionObjective.Name);
+                                    itemName = string.IsNullOrWhiteSpace(objectiveName) == false ? objectiveName : subPropInfo.ToString();
+                                    break;
+
+                                default:
+                                    itemName = subPropInfo.ToString();
+                                    break;
+                            }
+
                             node.Childs.Last().Childs.Add(new() { PropertyDetails = new() { Index = index++, Name = "", Value = itemName, TypeName = subPropInfo.GetType().Name }, IsExpanded = needExpand });
 
                             if (IsTypeBrowsable(subPropInfo.GetType()) == false)
                                 continue;
 
-                            ConstructPropertyNodeHierarchy(node.Childs.Last().Childs.Last(), subPropInfo, needExpand);
+                            if (subPropInfo is EvalPrototype evalProto && evalProto != null)
+                            {
+                                node.Childs.Last().Childs.Last().Childs.Add(new() { PropertyDetails = new() { Name = "", Value = evalProto.ExpressionString(), TypeName = "" }, IsExpanded = needExpand });
+                            }
+                            else
+                            {
+                                ConstructPropertyNodeHierarchy(node.Childs.Last().Childs.Last(), subPropInfo, needExpand);
+                            }
                         }
                         else if (subPropertyInfo is PropertyCollection)
                         {
@@ -760,6 +783,12 @@ namespace GameDatabaseBrowser
                         else
                             ConstructPropertyNodeHierarchy(node.Childs.Last(), subPropInfo, needExpand);
                     }
+                }
+                else if (propInfo.PropertyType == typeof(EvalPrototype) || typeof(EvalPrototype).IsAssignableFrom(propInfo.PropertyType))
+                {
+                    EvalPrototype evalProto = (EvalPrototype)propValue;
+                    if (evalProto != null)
+                        node.Childs.Last().Childs.Add(new() { PropertyDetails = new() { Name = "", Value = evalProto.ExpressionString(), TypeName = "" }, IsExpanded = needExpand });
                 }
                 else if (propInfo.PropertyType == typeof(Prototype) || typeof(Prototype).IsAssignableFrom(propInfo.PropertyType))
                 {
