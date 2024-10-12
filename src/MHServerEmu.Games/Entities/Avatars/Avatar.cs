@@ -97,7 +97,11 @@ namespace MHServerEmu.Games.Entities.Avatars
             Properties[PropertyEnum.AvatarLastActiveTime] = 161351646299;
 
             Properties[PropertyEnum.CombatLevel] = CharacterLevel;
+            Properties[PropertyEnum.DamagePctBonusVsBosses] = 10f;
+            Properties[PropertyEnum.DamagePctBonusVsAggroed] = 10f;
 
+        
+            
             // HACK: Set health to max for new avatars
             if (Properties[PropertyEnum.Health] == 0)
                 Properties[PropertyEnum.Health] = Properties[PropertyEnum.HealthMaxOther];
