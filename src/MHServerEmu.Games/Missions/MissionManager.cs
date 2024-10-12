@@ -22,7 +22,7 @@ namespace MHServerEmu.Games.Missions
     public class MissionManager : ISerialize
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
-        public static bool Debug = true;
+        public static bool Debug = false;
 
         private EventGroup _pendingEvents = new();
         private PrototypeId _avatarPrototypeRef;
@@ -170,7 +170,7 @@ namespace MHServerEmu.Games.Missions
                     DeleteMission(mission.PrototypeDataRef);
             }
 
-            // TODO ResetsWithRegion
+            ResetMissionsToCheckpoint();
 
             // reset all mission with conditions
             foreach (var missionRef in GameDatabase.DataDirectory.IteratePrototypesInHierarchy<MissionPrototype>(PrototypeIterateFlags.NoAbstractApprovedOnly))
@@ -191,6 +191,16 @@ namespace MHServerEmu.Games.Missions
                 if (mission == null) continue;
                 if (mission.IsDailyMission == false && mission.IsLegendaryMission == false)
                     mission.ResetConditions();
+            }
+        }
+
+        private void ResetMissionsToCheckpoint(bool checkpoint = false)
+        {
+            foreach (var mission in _missionDict.Values)
+            {
+                if (mission == null) continue;
+                if (mission.IsOpenMission == false)
+                    mission.ResetToCheckpoint(checkpoint);
             }
         }
 

@@ -278,6 +278,9 @@ namespace MHServerEmu.Games.Entities.Avatars
                 result = ChangePositionResult.Teleport;
             }
 
+            if (result == ChangePositionResult.PositionChanged)
+                player.UpdateSpawnMap(position.Value);
+
             return result;
         }
 
@@ -1288,6 +1291,8 @@ namespace MHServerEmu.Games.Entities.Avatars
             Properties[PropertyEnum.AvatarTeamUpAgentId] = teamUpAgent.Id;
             teamUpAgent.Properties[PropertyEnum.TeamUpOwnerId] = Id;
             teamUpAgent.Properties[PropertyEnum.PowerUserOverrideID] = Id;
+
+            teamUpAgent.CombatLevel = CombatLevel;
         }
 
         public bool IsTeamUpAgentUnlocked(PrototypeId teamUpProtoRef)
@@ -1307,10 +1312,11 @@ namespace MHServerEmu.Games.Entities.Avatars
             Agent teamUp = CurrentTeamUpAgent;
             if (teamUp == null) return;
 
-            teamUp.CombatLevel = CombatLevel;
-
+            // Resurrect or restore team-up health
             if (teamUp.IsDead)
                 teamUp.Resurrect();
+            else
+                teamUp.Properties[PropertyEnum.Health] = teamUp.Properties[PropertyEnum.HealthMax];
 
             using EntitySettings settings = ObjectPoolManager.Instance.Get<EntitySettings>();
             if (playIntro)
@@ -1343,6 +1349,7 @@ namespace MHServerEmu.Games.Entities.Avatars
             if (oldArea != null)
             {
                 PlayerLeftAreaGameEvent evt = new(player, oldArea.PrototypeDataRef);
+                oldArea.PopulationArea?.OnPlayerLeft();
                 oldArea.PlayerLeftAreaEvent.Invoke(evt);
                 oldArea.Region.PlayerLeftAreaEvent.Invoke(evt);
             }
@@ -1351,6 +1358,7 @@ namespace MHServerEmu.Games.Entities.Avatars
             {
                 // TODO Achievement?
                 PlayerEnteredAreaGameEvent evt = new(player, newArea.PrototypeDataRef);
+                newArea.PopulationArea?.OnPlayerEntered();
                 newArea.PlayerEnteredAreaEvent.Invoke(evt);
                 newArea.Region.PlayerEnteredAreaEvent.Invoke(evt);
             }

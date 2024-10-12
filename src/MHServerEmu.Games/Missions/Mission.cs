@@ -975,6 +975,11 @@ namespace MHServerEmu.Games.Missions
             return true;
         }
 
+        public void RunCompleted()
+        {
+            if (State == MissionState.Completed) _onSuccessActions?.Run(true);
+        }
+
         private bool OnUnsetStateCompleted()
         {
             var missionProto = Prototype;
@@ -2231,7 +2236,7 @@ namespace MHServerEmu.Games.Missions
 
         private bool ScheduleRestartMission()
         {            
-            if (RestartingMission && _restartMissionEvent.IsValid == false)
+            if (RestartingMission == false && _restartMissionEvent.IsValid == false)
             {
                 var scheduler = GameEventScheduler;
                 if (scheduler == null) return false;
@@ -2343,6 +2348,60 @@ namespace MHServerEmu.Games.Missions
                     hasLoot |= objective.GetDropLootsForEnemy(enemy, dropLoots);
 
             return hasLoot;
+        }
+
+        public void ResetToCheckpoint(bool checkpoint)
+        {
+            if (checkpoint || ResetWithRegion() == false)
+                ResetObjectivesToCheckpoint();
+        }
+
+        private bool ResetWithRegion()
+        {
+            var missionProto = Prototype;
+            if (missionProto == null) return false;
+
+            if (missionProto.ResetsWithRegion == PrototypeId.Invalid) return false;
+
+            if (State == MissionState.Active || State == MissionState.Completed || State == MissionState.Failed)
+            {
+                var region = Region;
+                if (region == null) return false;
+                if (region.FilterRegion(missionProto.ResetsWithRegion, false) && region.Id != ResetsWithRegionId)
+                    return RestartMission();
+            }
+
+            return false;
+        }
+
+        private void ResetObjectivesToCheckpoint()
+        {
+            if (State != MissionState.Active || _currentObjectiveSequence < 0.0f) return;
+
+            float order = _currentObjectiveSequence;
+            bool found = false;
+
+            // resets all objectives without checkpoint and moves current order to checkpoint
+
+            foreach (var objective in _objectiveDict.Values.Reverse())
+            {
+                var objProto = objective.Prototype;
+                if (objProto.Order > order) continue;
+
+                order = objProto.Order;
+
+                if (objProto.Checkpoint)
+                    found = true;
+                else
+                    objective.SetState(MissionObjectiveState.Invalid);
+
+                if (found) break;
+            }
+
+            if (found && order >= 0.0f)
+                ResetObjectives(order);
+            else
+                ResetObjectives();
         }
 
         protected class RemovePartipantEvent : CallMethodEventParam1<Mission, Player>
