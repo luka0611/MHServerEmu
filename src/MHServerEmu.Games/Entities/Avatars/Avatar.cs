@@ -98,7 +98,7 @@ namespace MHServerEmu.Games.Entities.Avatars
 
             Properties[PropertyEnum.CombatLevel] = CharacterLevel;
             Properties[PropertyEnum.DamagePctBonusVsBosses] = 10f;
-            Properties[PropertyEnum.DamagePctBonusVsAggroed] = 10f;
+            Properties[PropertyEnum.DamagePctBonus] = 10f;
 
         
             
