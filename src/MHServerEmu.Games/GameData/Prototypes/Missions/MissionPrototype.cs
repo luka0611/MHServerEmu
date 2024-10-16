@@ -338,6 +338,9 @@ namespace MHServerEmu.Games.GameData.Prototypes
         public DesignWorkflowState DesignStateXboxOne { get; protected set; }
 
         [DoNotCopy]
+        public override bool ShouldCacheCRC { get => true; }
+
+        [DoNotCopy]
         public PrototypeId FirstMarker { get; private set; }
         [DoNotCopy]
         public bool HasClientInterest { get; private set; }
@@ -778,5 +781,15 @@ namespace MHServerEmu.Games.GameData.Prototypes
     {
         public PrototypeId CategoryType { get; protected set; }
         public PrototypeId ReputationExperienceType { get; protected set; }
+
+        [DoNotCopy]
+        public AdvancedMissionCategoryPrototype CategoryProto { get; protected set; }
+
+        public override void PostProcess()
+        {
+            base.PostProcess();
+
+            CategoryProto = GameDatabase.GetPrototype<AdvancedMissionCategoryPrototype>(CategoryType);
+        }
     }
 }

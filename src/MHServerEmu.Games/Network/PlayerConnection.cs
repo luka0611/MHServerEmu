@@ -48,6 +48,7 @@ namespace MHServerEmu.Games.Network
         public AreaOfInterest AOI { get; }
         public WorldView WorldView { get; }
         public TransferParams TransferParams { get; }
+        public MigrationData MigrationData { get; }
 
         public Player Player { get; private set; }
 
@@ -65,6 +66,7 @@ namespace MHServerEmu.Games.Network
             AOI = new(this);
             WorldView = new(this);
             TransferParams = new(this);
+            MigrationData = new();
 
             InitializeFromDBAccount();
 
@@ -426,6 +428,7 @@ namespace MHServerEmu.Games.Network
                 case ClientToGameServerMessage.NetMessageHUDTutorialDismissed:              OnHUDTutorialDismissed(message); break;             // 111
                 case ClientToGameServerMessage.NetMessageSetPlayerGameplayOptions:          OnSetPlayerGameplayOptions(message); break;         // 113
                 case ClientToGameServerMessage.NetMessageSelectAvatarSynergies:             OnSelectAvatarSynergies(message); break;            // 116
+                case ClientToGameServerMessage.NetMessageRequestLegendaryMissionReroll:     OnRequestLegendaryMissionReroll(message); break;    // 117
                 case ClientToGameServerMessage.NetMessageRequestInterestInInventory:        OnRequestInterestInInventory(message); break;       // 121
                 case ClientToGameServerMessage.NetMessageRequestInterestInAvatarEquipment:  OnRequestInterestInAvatarEquipment(message); break; // 123
                 case ClientToGameServerMessage.NetMessageRequestInterestInTeamUpEquipment:  OnRequestInterestInTeamUpEquipment(message); break; // 124
@@ -437,6 +440,7 @@ namespace MHServerEmu.Games.Network
                 case ClientToGameServerMessage.NetMessageUISystemLockState:                 OnUISystemLockState(message); break;                // 150
                 case ClientToGameServerMessage.NetMessageStashTabInsert:                    OnStashTabInsert(message); break;                   // 155
                 case ClientToGameServerMessage.NetMessageStashTabOptions:                   OnStashTabOptions(message); break;                  // 156
+                case ClientToGameServerMessage.NetMessageMissionTrackerFiltersUpdate:       OnMissionTrackerFiltersUpdate(message); break;      // 166
 
                 // Grouping Manager
                 case ClientToGameServerMessage.NetMessageChat:                                                                                  // 64
@@ -1153,6 +1157,14 @@ namespace MHServerEmu.Games.Network
             return true;
         }
 
+        private bool OnRequestLegendaryMissionReroll(MailboxMessage message)    // 117
+        {
+            var requestLegendaryMissionRerol = message.As<NetMessageRequestLegendaryMissionReroll>();
+            if (requestLegendaryMissionRerol == null) return Logger.WarnReturn(false, $"OnRequestLegendaryMissionReroll(): Failed to retrieve message");
+            Player.RequestLegendaryMissionReroll();
+            return true;
+        }
+
         private bool OnRequestInterestInInventory(MailboxMessage message)   // 121
         {
             var requestInterestInInventory = message.As<NetMessageRequestInterestInInventory>();
@@ -1289,6 +1301,21 @@ namespace MHServerEmu.Games.Network
             if (stashTabOptions == null) return Logger.WarnReturn(false, $"OnStashTabOptions(): Failed to retrieve message");
 
             return Player.UpdateStashTabOptions(stashTabOptions);
+        }
+
+        private bool OnMissionTrackerFiltersUpdate(MailboxMessage message)
+        {
+            var filters = message.As<NetMessageMissionTrackerFiltersUpdate>();
+            if (filters == null) return Logger.WarnReturn(false, $"OnStashTabOptions(): Failed to retrieve message");
+
+            foreach (var filter in filters.MissionTrackerFilterChangesList)
+            {
+                PrototypeId filterPrototypeId = (PrototypeId)filter.FilterPrototypeId;
+                if (filterPrototypeId == PrototypeId.Invalid) continue;                
+                Player.Properties[PropertyEnum.MissionTrackerFilter, filterPrototypeId] = filter.IsFiltered;
+            }
+
+            return true; ;
         }
 
         #endregion
