@@ -2,10 +2,12 @@ using System;
 using MHServerEmu.Games.Entities;
 using MHServerEmu.Games.Events;
 using MHServerEmu.Core.Logging;
-using MHServerEmu.Core.System.Random;
 
 namespace MHServerEmu.Games.Conditions
 {
+    /// <summary>
+    /// Represents a burn condition that deals damage over time to an entity.
+    /// </summary>
     public class BurnCondition : Condition
     {
         private static readonly Logger Logger = LogManager.CreateLogger();
@@ -14,10 +16,8 @@ namespace MHServerEmu.Games.Conditions
         public TimeSpan Duration { get; private set; }
         public TimeSpan TickInterval { get; private set; }
 
-        private int _ticksApplied;
         private DateTime _startTime;
         private readonly Entity _owner;
-        private readonly Random _random;
 
         public BurnCondition(float damagePerTick, TimeSpan duration, TimeSpan tickInterval, Entity owner)
         {
@@ -25,10 +25,12 @@ namespace MHServerEmu.Games.Conditions
             Duration = duration;
             TickInterval = tickInterval;
             _owner = owner;
-            _ticksApplied = 0;
-            _random = new Random();
         }
 
+        /// <summary>
+        /// Applies the burn condition to the target entity and schedules the first damage tick.
+        /// </summary>
+        /// <param name="target">The entity to apply the burn condition to.</param>
         public override void Apply(Entity target)
         {
             base.Apply(target);
@@ -37,6 +39,10 @@ namespace MHServerEmu.Games.Conditions
             Logger.Info($"Applied BurnCondition to {target.Name}: {DamagePerTick} dmg/tick for {Duration.TotalSeconds} seconds.");
         }
 
+        /// <summary>
+        /// Schedules the next damage tick event.
+        /// </summary>
+        /// <param name="target">The target entity.</param>
         private void ScheduleNextTick(Entity target)
         {
             var scheduler = target.Game.GameEventScheduler;
@@ -50,16 +56,23 @@ namespace MHServerEmu.Games.Conditions
             scheduler.ScheduleEvent(burnTickEvent, TickInterval, null);
         }
 
+        /// <summary>
+        /// Applies damage to the target entity.
+        /// </summary>
+        /// <param name="target">The entity to damage.</param>
         private void ApplyDamage(Entity target)
         {
             if (target.IsAlive)
             {
                 target.ApplyDamage(DamagePerTick, DamageType.Fire, _owner);
                 Logger.Debug($"BurnCondition: Applied {DamagePerTick} Fire damage to {target.Name}.");
-                _ticksApplied++;
             }
         }
 
+        /// <summary>
+        /// Updates the condition, checking for expiration.
+        /// </summary>
+        /// <param name="target">The target entity.</param>
         public override void Update(Entity target)
         {
             base.Update(target);
@@ -72,6 +85,9 @@ namespace MHServerEmu.Games.Conditions
             }
         }
 
+        /// <summary>
+        /// Represents a scheduled event for applying burn damage ticks.
+        /// </summary>
         private class BurnTickEvent : ScheduledEvent
         {
             private BurnCondition _burnCondition;
@@ -83,6 +99,11 @@ namespace MHServerEmu.Games.Conditions
                 _target = target;
             }
 
+            /// <summary>
+            /// Triggered when the scheduled event occurs.
+            /// Applies damage and reschedules if necessary.
+            /// </summary>
+            /// <returns>True to keep the event active, false to remove it.</returns>
             public override bool OnTriggered()
             {
                 if (_burnCondition == null || _target == null || !_target.IsAlive)
