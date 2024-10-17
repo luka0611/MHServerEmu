@@ -2,6 +2,7 @@ using System;
 using MHServerEmu.Games.Entities;
 using MHServerEmu.Games.Events;
 using MHServerEmu.Core.Logging;
+using MHServerEmu.Core.System.Random;
 
 namespace MHServerEmu.Games.Conditions
 {
@@ -15,13 +16,17 @@ namespace MHServerEmu.Games.Conditions
 
         private int _ticksApplied;
         private DateTime _startTime;
+        private readonly Entity _owner;
+        private readonly Random _random;
 
-        public BurnCondition(float damagePerTick, TimeSpan duration, TimeSpan tickInterval)
+        public BurnCondition(float damagePerTick, TimeSpan duration, TimeSpan tickInterval, Entity owner)
         {
             DamagePerTick = damagePerTick;
             Duration = duration;
             TickInterval = tickInterval;
+            _owner = owner;
             _ticksApplied = 0;
+            _random = new Random();
         }
 
         public override void Apply(Entity target)
@@ -49,7 +54,7 @@ namespace MHServerEmu.Games.Conditions
         {
             if (target.IsAlive)
             {
-                target.ApplyDamage(DamagePerTick, DamageType.Fire, Owner);
+                target.ApplyDamage(DamagePerTick, DamageType.Fire, _owner);
                 Logger.Debug($"BurnCondition: Applied {DamagePerTick} Fire damage to {target.Name}.");
                 _ticksApplied++;
             }
