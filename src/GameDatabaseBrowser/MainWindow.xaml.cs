@@ -141,7 +141,7 @@ namespace GameDatabaseBrowser
 
 
             PrototypeNodes.Add(new() { PrototypeDetails = new("Prototypes", new()) });
-            PropertyNodes.Add(new() { PropertyDetails = new() { Name = "Data"}});
+            PropertyNodes.Add(new() { PropertyDetails = new() { Name = "Data" } });
 
             RefreshPrototypeTree(GetSearchDetails());
             worker.ReportProgress(100);
@@ -396,7 +396,7 @@ namespace GameDatabaseBrowser
                 PropertyNodes[0].ClearSearch();
                 PropertyNodes[0].IsExpanded = true;
                 propertytreeView.Items.Refresh();
-            }   
+            }
             else
             {
                 RefreshPrototypeTree(searchDetails);
@@ -464,48 +464,17 @@ namespace GameDatabaseBrowser
         /// </summary>
         private void OnClickCopyValueToPrototypeIdMenuItem(object sender, RoutedEventArgs e)
         {
-            object selected = ((FrameworkElement)e.OriginalSource).DataContext;
-
-            string value = "";
-            PrototypeId prototypeId = 0;
-            if (selected is PropertyNode propertyNode)
-            {
-                value = propertyNode?.PropertyDetails?.Value;
-                if (string.IsNullOrEmpty(value))
-                    return;
-
-                prototypeId = propertyNode.PropertyDetails.GetPrototypeIdEquivalence();
-            }
-            else if (selected is PrototypeNode prototypeNode)
-                prototypeId = prototypeNode.PrototypeDetails.PrototypeId;
-
-            if (prototypeId == 0)
-                Clipboard.SetText(value);
-            else
-                Clipboard.SetText(prototypeId.ToString());
+            Clipboard.SetText(GetPrototypeIdFromRoutedEventArgs(e).ToString());
         }
 
         private void OnClickCopyNameWithPrototypeIdMenuItem(object sender, RoutedEventArgs e)
         {
-            object selected = ((FrameworkElement)e.OriginalSource).DataContext;
+            PrototypeId prototypeId = GetPrototypeIdFromRoutedEventArgs(e);
 
-            string value = "";
-            PrototypeId prototypeId = 0;
-            if (selected is PropertyNode propertyNode)
-            {
-                value = propertyNode?.PropertyDetails?.Value;
-                if (string.IsNullOrEmpty(value))
-                    return;
-
-                prototypeId = propertyNode.PropertyDetails.GetPrototypeIdEquivalence();
-            }
-            else if (selected is PrototypeNode prototypeNode)
-                prototypeId = prototypeNode.PrototypeDetails.PrototypeId;
-
-            if (prototypeId == 0)
-                Clipboard.SetText(value);
-            else
+            if (prototypeId != 0)
                 Clipboard.SetText($"{GameDatabase.GetFormattedPrototypeName(prototypeId)} = {prototypeId},");
+            else
+                Clipboard.SetText("");
         }
 
         /// <summary>
@@ -521,10 +490,55 @@ namespace GameDatabaseBrowser
             else if (selected is PrototypeNode prototypeNode)
                 name = prototypeNode.PrototypeDetails.FullName;
 
-            if (string.IsNullOrEmpty(name))
-                return;
-
             Clipboard.SetText(name);
+        }
+
+        /// <summary>
+        /// Called when context menu "Guid > Copy as ulong" selected
+        /// </summary>
+        private void OnClickCopyUlongGuidMenuItem(object sender, RoutedEventArgs e)
+        {
+            PrototypeId prototypeId = GetPrototypeIdFromRoutedEventArgs(e);
+
+            if (prototypeId != 0)
+            {
+                PrototypeGuid prototypeGuid = GameDatabase.GetPrototypeGuid(prototypeId);
+                Clipboard.SetText(prototypeGuid.ToString());
+            }
+            else
+                Clipboard.SetText("");
+        }
+
+        /// <summary>
+        /// Called when context menu "Guid > Copy as long" selected
+        /// </summary>
+        private void OnClickCopyLongGuidMenuItem(object sender, RoutedEventArgs e)
+        {
+            PrototypeId prototypeId = GetPrototypeIdFromRoutedEventArgs(e);
+
+            if (prototypeId != 0)
+            {
+                PrototypeGuid prototypeGuid = GameDatabase.GetPrototypeGuid(prototypeId);
+                Clipboard.SetText(((long)prototypeGuid).ToString());
+            }
+            else
+                Clipboard.SetText("");
+        }
+
+        private PrototypeId GetPrototypeIdFromRoutedEventArgs(RoutedEventArgs e)
+        {
+            try
+            {
+                object selected = ((FrameworkElement)e.OriginalSource).DataContext;
+
+                if (selected is PrototypeNode prototypeNode)
+                    return prototypeNode.PrototypeDetails.PrototypeId;
+                else if (selected is PropertyNode propertyNode)
+                    return propertyNode.PropertyDetails.GetPrototypeIdEquivalence();
+            }
+            catch { }
+
+            return 0;
         }
 
         /// <summary>

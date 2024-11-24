@@ -16,6 +16,8 @@
             <MenuItem Header="Copy value to PrototypeId" Click="OnClickCopyValueToPrototypeIdMenuItem"/>
             <MenuItem Header="Copy Name = PrototypeId" Click="OnClickCopyNameWithPrototypeIdMenuItem"/>
             <MenuItem Header="Copy name" Click="OnClickCopyNameMenuItem"/>
+            <MenuItem Header="Guid > Copy as ulong" Click="OnClickCopyUlongGuidMenuItem"/>
+            <MenuItem Header="Guid > Copy as long" Click="OnClickCopyLongGuidMenuItem"/>
         </ContextMenu>
     </Window.Resources>
     <Grid Background="Gainsboro" >
@@ -41,7 +43,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="auto" />
             </Grid.ColumnDefinitions>
-            
+
             <Button Grid.Column="0" Width="24" Height="24" Margin="0 0 8 0" Background="Green" Foreground="White" Content="✕" Click="OnResetButtonClicked" ToolTip="Reset the search filters"/>
 
             <!-- Search by text field -->
@@ -116,7 +118,7 @@
                                 <src:MyVirtualizingStackPanel/>
                             </ItemsPanelTemplate>
                         </Setter.Value>
-                    </Setter>               
+                    </Setter>
                 </Style>
             </TreeView.ItemContainerStyle>
             <TreeView.ItemTemplate>
@@ -125,8 +127,8 @@
                 </HierarchicalDataTemplate>
             </TreeView.ItemTemplate>
         </TreeView>
-        
-        <!-- Loading Progress -->        
+
+        <!-- Loading Progress -->
         <StackPanel Orientation="Vertical" Width="300" Grid.Row="1" Grid.RowSpan="2">
             <TextBlock x:Name="NoSipMessage" Text="The sip file cannot be found. Add it in bin folder and restart the app" 
                         FontSize="20" TextWrapping="Wrap" HorizontalAlignment="Center" Visibility="Collapsed" Margin="30"></TextBlock>
