@@ -756,6 +756,8 @@ namespace GameDatabaseBrowser
 
                                 case MissionPopulationEntryPrototype missionPopulationEntry:
                                     string populationEntityName =  (missionPopulationEntry.Population as PopulationEntityPrototype)?.Entity.GetNameFormatted();
+                                    if (string.IsNullOrWhiteSpace(populationEntityName))
+                                        populationEntityName = (missionPopulationEntry.Population as PopulationEncounterPrototype)?.EncounterResource.GetNameFormatted();
                                     itemName = string.IsNullOrWhiteSpace(populationEntityName) ? subPropInfo.ToString() : populationEntityName;
                                     break;
 
