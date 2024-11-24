@@ -759,6 +759,11 @@ namespace GameDatabaseBrowser
                                     itemName = string.IsNullOrWhiteSpace(populationEntityName) ? subPropInfo.ToString() : populationEntityName;
                                     break;
 
+                                case PopulationRequiredObjectPrototype populationRequiredObject:
+                                    string ObjectTemplateName = populationRequiredObject?.ObjectTemplate.GetNameFormatted();
+                                    itemName = string.IsNullOrWhiteSpace(ObjectTemplateName) ? subPropInfo.ToString() : ObjectTemplateName;
+                                    break;
+
                                 default:
                                     itemName = subPropInfo.ToString();
                                     break;
