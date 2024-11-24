@@ -35,6 +35,9 @@ namespace GameDatabaseBrowser.Search
                 case SearchType.SelectedPrototype:
                     TextValue = mainWindow.selectedPrototypeSearchText.Text;
                     break;
+                case SearchType.ByGuid:
+                    TextValue = mainWindow.guidAutoCompletionText.Text;
+                    break;
             }
         }
     }

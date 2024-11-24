@@ -16,6 +16,8 @@
             <MenuItem Header="Copy value to PrototypeId" Click="OnClickCopyValueToPrototypeIdMenuItem"/>
             <MenuItem Header="Copy Name = PrototypeId" Click="OnClickCopyNameWithPrototypeIdMenuItem"/>
             <MenuItem Header="Copy name" Click="OnClickCopyNameMenuItem"/>
+            <MenuItem Header="Guid > Copy as ulong" Click="OnClickCopyUlongGuidMenuItem"/>
+            <MenuItem Header="Guid > Copy as long" Click="OnClickCopyLongGuidMenuItem"/>
         </ContextMenu>
     </Window.Resources>
     <Grid Background="Gainsboro" >
@@ -41,7 +43,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="auto" />
             </Grid.ColumnDefinitions>
-            
+
             <Button Grid.Column="0" Width="24" Height="24" Margin="0 0 8 0" Background="Green" Foreground="White" Content="✕" Click="OnResetButtonClicked" ToolTip="Reset the search filters"/>
 
             <!-- Search by text field -->
@@ -64,6 +66,11 @@
                 <wpfcontrols:AutoCompleteTextBox x:Name="selectedPrototypeSearchText" Watermark="Enter text" FontSize="15" Background="White" />
             </Grid>
 
+            <!-- Search by Guid -->
+            <Grid Grid.Column="1" x:Name="SearchByGuidField" Visibility="Collapsed" Height="35" Background="White">
+                <wpfcontrols:AutoCompleteTextBox x:Name="guidAutoCompletionText" Watermark="Enter text" FontSize="15" Background="White" />
+            </Grid>
+
             <Button Grid.Column="2" x:Name="btnSearch" Content="Search" Margin="5" Click="OnSearchButtonClicked" Width="100"/>
         </Grid>
 
@@ -74,6 +81,7 @@
                 <ComboBoxItem Content="Search by class"/>
                 <ComboBoxItem Content="Search by blueprint"/>
                 <ComboBoxItem Content="Search selected prototype"/>
+                <ComboBoxItem Content="Search by Guid"/>
             </ComboBox>
 
             <CheckBox Grid.Row="1" x:Name="expandResultToggle" Content="Expand results" Margin="5" ToolTip="Expand all the results" />
@@ -110,7 +118,7 @@
                                 <src:MyVirtualizingStackPanel/>
                             </ItemsPanelTemplate>
                         </Setter.Value>
-                    </Setter>               
+                    </Setter>
                 </Style>
             </TreeView.ItemContainerStyle>
             <TreeView.ItemTemplate>
@@ -119,8 +127,8 @@
                 </HierarchicalDataTemplate>
             </TreeView.ItemTemplate>
         </TreeView>
-        
-        <!-- Loading Progress -->        
+
+        <!-- Loading Progress -->
         <StackPanel Orientation="Vertical" Width="300" Grid.Row="1" Grid.RowSpan="2">
             <TextBlock x:Name="NoSipMessage" Text="The sip file cannot be found. Add it in bin folder and restart the app" 
                         FontSize="20" TextWrapping="Wrap" HorizontalAlignment="Center" Visibility="Collapsed" Margin="30"></TextBlock>
@@ -130,17 +138,21 @@
         <!-- Selected Prototype -->
         <Grid Grid.Row="2" Grid.Column="1" Margin="5">
             <Grid.RowDefinitions>
-                <RowDefinition Height="30" />
-                <RowDefinition Height="30" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="20" />
                 <RowDefinition Height="20" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <TextBlock x:Name="txtDataRef" Grid.Row="0" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
-            <ContentControl MouseDoubleClick="OnPropertyDoubleClicked" Grid.Row="1">
+            <TextBlock x:Name="txtPrototypeGuid" Grid.Row="1" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
+            <ContentControl MouseDoubleClick="OnPropertyDoubleClicked" Grid.Row="2">
                 <TextBlock x:Name="txtParentDataRef" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
             </ContentControl>
-            <Separator Grid.Row="2" Height="5" Background="Black"/>
-            <TreeView Name="propertytreeView" Grid.Row="3" Grid.Column="0" TextOptions.TextFormattingMode="Display" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Margin="5">
+            <TextBlock x:Name="txtPrototypeClass" Grid.Row="3" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
+            <Separator Grid.Row="4" Height="5" Background="Black"/>
+            <TreeView Name="propertytreeView" Grid.Row="5" Grid.Column="0" TextOptions.TextFormattingMode="Display" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Margin="5">
                 <TreeView.ItemContainerStyle>
                     <Style TargetType="TreeViewItem">
                         <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />

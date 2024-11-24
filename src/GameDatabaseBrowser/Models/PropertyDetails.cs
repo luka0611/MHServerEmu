@@ -85,7 +85,7 @@ namespace GameDatabaseBrowser.Models
 
         public PrototypeId GetPrototypeIdEquivalence()
         {
-            if (Value == "Invalid")
+            if (string.IsNullOrEmpty(Value) || Value == "Invalid")
                 return 0;
 
             return TypeName switch

@@ -6,6 +6,7 @@ namespace GameDatabaseBrowser.Search
         ByText = 0,
         ByPrototypeClass = 1,
         ByPrototypeBlueprint = 2,
-        SelectedPrototype = 3
+        SelectedPrototype = 3,
+        ByGuid = 4,
     }
 }
