@@ -532,50 +532,38 @@ namespace GameDatabaseBrowser
         /// </summary>
         private void OnSearchTypeSelected(object sender, SelectionChangedEventArgs e)
         {
+            int index = SearchTypeComboBox.SelectedIndex;
+            SearchByTextField.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+            SearchByClassField.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+            SearchByBlueprintField.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+            SearchSelectedPrototypeField.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
+            SearchByGuidField.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+
             switch (SearchTypeComboBox.SelectedIndex)
             {
                 case 0: // Search by text
-                    SearchByTextField.Visibility = Visibility.Visible;
-                    SearchByBlueprintField.Visibility = Visibility.Collapsed;
-                    SearchByClassField.Visibility = Visibility.Collapsed;
-                    SearchSelectedPrototypeField.Visibility = Visibility.Collapsed;
-
                     SearchByTextToggles.Visibility = Visibility.Visible;
                     SearchByClassAndBlueprintToggles.Visibility = Visibility.Collapsed;
-
                     break;
 
                 case 1: // Search by class
-                    SearchByTextField.Visibility = Visibility.Collapsed;
-                    SearchByClassField.Visibility = Visibility.Visible;
-                    SearchByBlueprintField.Visibility = Visibility.Collapsed;
-                    SearchSelectedPrototypeField.Visibility = Visibility.Collapsed;
-
                     SearchByTextToggles.Visibility = Visibility.Collapsed;
                     SearchByClassAndBlueprintToggles.Visibility = Visibility.Visible;
-
                     break;
 
                 case 2: // Search by blueprint
-                    SearchByTextField.Visibility = Visibility.Collapsed;
-                    SearchByClassField.Visibility = Visibility.Collapsed;
-                    SearchByBlueprintField.Visibility = Visibility.Visible;
-                    SearchSelectedPrototypeField.Visibility = Visibility.Collapsed;
-
                     SearchByTextToggles.Visibility = Visibility.Collapsed;
                     SearchByClassAndBlueprintToggles.Visibility = Visibility.Visible;
-
                     break;
 
                 case 3: // Search selected prototype
-                    SearchByTextField.Visibility = Visibility.Collapsed;
-                    SearchByClassField.Visibility = Visibility.Collapsed;
-                    SearchByBlueprintField.Visibility = Visibility.Collapsed;
-                    SearchSelectedPrototypeField.Visibility = Visibility.Visible;
-
                     SearchByTextToggles.Visibility = Visibility.Collapsed;
                     SearchByClassAndBlueprintToggles.Visibility = Visibility.Collapsed;
+                    break;
 
+                case 4: // Search by Guid
+                    SearchByTextToggles.Visibility = Visibility.Collapsed;
+                    SearchByClassAndBlueprintToggles.Visibility = Visibility.Collapsed;
                     break;
             }
         }
@@ -835,7 +823,9 @@ namespace GameDatabaseBrowser
                 string prototypeFullName = GameDatabase.GetPrototypeName((PrototypeId)prototypeId);
                 txtDataRef.Text = $"{prototypeFullName} ({prototypeId})";
                 txtDataRef.DataContext = new PropertyNode() { PropertyDetails = new PropertyDetails() { Name = prototypeFullName, Value = prototypeId.ToString() } };
-
+                txtPrototypeGuid.Text = $"PrototypeGuid : {GameDatabase.GetPrototypeGuid((PrototypeId)prototypeId)}";
+                string prototypeClass = DataDirectory.Instance.GetPrototypeClassType((PrototypeId)prototypeId).ToString().Split('.').LastOrDefault();
+                txtPrototypeClass.Text = $"Prototype : {prototypeClass}";
                 if (_fullNameBackHistory.Count == 0 || _fullNameBackHistory.Peek() != prototypeFullName)
                     _fullNameBackHistory.Push(prototypeFullName);
             }

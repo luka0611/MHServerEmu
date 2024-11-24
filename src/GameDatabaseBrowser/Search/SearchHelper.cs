@@ -22,6 +22,7 @@ namespace GameDatabaseBrowser.Search
                 SearchType.ByText => GetPrototypeToDisplayFromTextSearch(searchDetails),
                 SearchType.ByPrototypeClass => GetPrototypeToDisplayFromClassSearch(searchDetails),
                 SearchType.ByPrototypeBlueprint => GetPrototypeToDisplayFromBlueprintSearch(searchDetails),
+                SearchType.ByGuid => GetPrototypeToDisplayFromGuidSearch(searchDetails),
                 _ => null,
             };
         }
@@ -115,6 +116,24 @@ namespace GameDatabaseBrowser.Search
                 else
                     return _mainWindow.PrototypeDetails.Where(k => k.FullName.ToLowerInvariant().Contains(currentFilter)).ToList();
             }
+        }
+
+        /// <summary>
+        /// Filter the prototype to display as result considering prototype Guid
+        /// </summary>
+        private List<PrototypeDetails> GetPrototypeToDisplayFromGuidSearch(SearchDetails searchDetails)
+        {
+            string currentFilter = "";
+            
+            if (ulong.TryParse(searchDetails.TextValue, out ulong ulongGuidTofind))
+                currentFilter = GameDatabase.GetDataRefByPrototypeGuid((PrototypeGuid)ulongGuidTofind).ToString().ToLowerInvariant();
+            else if(long.TryParse(searchDetails.TextValue, out long longGuidTofind))
+                currentFilter = GameDatabase.GetDataRefByPrototypeGuid((PrototypeGuid)longGuidTofind).ToString().ToLowerInvariant();
+
+            if (string.IsNullOrEmpty(currentFilter))
+                return _mainWindow.PrototypeDetails;
+
+            return _mainWindow.PrototypeDetails.Where(k => k.PrototypeId.ToString() == currentFilter).ToList();
         }
     }
 }

@@ -64,6 +64,11 @@
                 <wpfcontrols:AutoCompleteTextBox x:Name="selectedPrototypeSearchText" Watermark="Enter text" FontSize="15" Background="White" />
             </Grid>
 
+            <!-- Search by Guid -->
+            <Grid Grid.Column="1" x:Name="SearchByGuidField" Visibility="Collapsed" Height="35" Background="White">
+                <wpfcontrols:AutoCompleteTextBox x:Name="guidAutoCompletionText" Watermark="Enter text" FontSize="15" Background="White" />
+            </Grid>
+
             <Button Grid.Column="2" x:Name="btnSearch" Content="Search" Margin="5" Click="OnSearchButtonClicked" Width="100"/>
         </Grid>
 
@@ -74,6 +79,7 @@
                 <ComboBoxItem Content="Search by class"/>
                 <ComboBoxItem Content="Search by blueprint"/>
                 <ComboBoxItem Content="Search selected prototype"/>
+                <ComboBoxItem Content="Search by Guid"/>
             </ComboBox>
 
             <CheckBox Grid.Row="1" x:Name="expandResultToggle" Content="Expand results" Margin="5" ToolTip="Expand all the results" />
@@ -130,17 +136,21 @@
         <!-- Selected Prototype -->
         <Grid Grid.Row="2" Grid.Column="1" Margin="5">
             <Grid.RowDefinitions>
-                <RowDefinition Height="30" />
-                <RowDefinition Height="30" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="20" />
                 <RowDefinition Height="20" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <TextBlock x:Name="txtDataRef" Grid.Row="0" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
-            <ContentControl MouseDoubleClick="OnPropertyDoubleClicked" Grid.Row="1">
+            <TextBlock x:Name="txtPrototypeGuid" Grid.Row="1" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
+            <ContentControl MouseDoubleClick="OnPropertyDoubleClicked" Grid.Row="2">
                 <TextBlock x:Name="txtParentDataRef" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
             </ContentControl>
-            <Separator Grid.Row="2" Height="5" Background="Black"/>
-            <TreeView Name="propertytreeView" Grid.Row="3" Grid.Column="0" TextOptions.TextFormattingMode="Display" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Margin="5">
+            <TextBlock x:Name="txtPrototypeClass" Grid.Row="3" VerticalAlignment="Center" ContextMenu="{StaticResource PropertyContextMenu}" />
+            <Separator Grid.Row="4" Height="5" Background="Black"/>
+            <TreeView Name="propertytreeView" Grid.Row="5" Grid.Column="0" TextOptions.TextFormattingMode="Display" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Margin="5">
                 <TreeView.ItemContainerStyle>
                     <Style TargetType="TreeViewItem">
                         <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
