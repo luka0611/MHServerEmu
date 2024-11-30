@@ -87,5 +87,13 @@ namespace MHServerEmu.Games.GameData
         {
             return GameDatabase.GetFormattedPrototypeName(prototypeId);
         }
+
+        /// <summary>
+        /// Returns the formatted name of this <see cref="AssetId"/> (just the file name instead of the whole path).
+        /// </summary>
+        public static string GetNameFormatted(this AssetId assetId)
+        {
+            return GameDatabase.GetFormattedAssetName(assetId);
+        }
     }
 }

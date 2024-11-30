@@ -754,6 +754,18 @@ namespace GameDatabaseBrowser
                                     itemName = string.IsNullOrWhiteSpace(objectiveName) == false ? objectiveName : subPropInfo.ToString();
                                     break;
 
+                                case MissionPopulationEntryPrototype missionPopulationEntry:
+                                    string populationEntityName =  (missionPopulationEntry.Population as PopulationEntityPrototype)?.Entity.GetNameFormatted();
+                                    if (string.IsNullOrWhiteSpace(populationEntityName))
+                                        populationEntityName = (missionPopulationEntry.Population as PopulationEncounterPrototype)?.EncounterResource.GetNameFormatted();
+                                    itemName = string.IsNullOrWhiteSpace(populationEntityName) ? subPropInfo.ToString() : populationEntityName;
+                                    break;
+
+                                case PopulationRequiredObjectPrototype populationRequiredObject:
+                                    string ObjectTemplateName = populationRequiredObject?.ObjectTemplate.GetNameFormatted();
+                                    itemName = string.IsNullOrWhiteSpace(ObjectTemplateName) ? subPropInfo.ToString() : ObjectTemplateName;
+                                    break;
+
                                 default:
                                     itemName = subPropInfo.ToString();
                                     break;
