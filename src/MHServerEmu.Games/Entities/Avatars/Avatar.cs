@@ -4,7 +4,6 @@ using MHServerEmu.Core.Extensions;
 using MHServerEmu.Core.Helpers;
 using MHServerEmu.Core.Logging;
 using MHServerEmu.Core.Memory;
-using MHServerEmu.Core.Metrics.Trackers;
 using MHServerEmu.Core.Serialization;
 using MHServerEmu.Core.System.Random;
 using MHServerEmu.Core.VectorMath;
@@ -21,11 +20,9 @@ using MHServerEmu.Games.GameData.Calligraphy;
 using MHServerEmu.Games.GameData.LiveTuning;
 using MHServerEmu.Games.GameData.Prototypes;
 using MHServerEmu.Games.GameData.Tables;
-using MHServerEmu.Games.Loot;
 using MHServerEmu.Games.Network;
 using MHServerEmu.Games.Powers;
 using MHServerEmu.Games.Properties;
-using MHServerEmu.Games.Properties.Evals;
 using MHServerEmu.Games.Regions;
 using MHServerEmu.Games.Social.Guilds;
 
@@ -1100,8 +1097,6 @@ namespace MHServerEmu.Games.Entities.Avatars
 
                             if (AssignPower(itemPowerProtoRef, indexProps) == null)
                                 Logger.Warn($"AssignItemPowers(): Failed to assign item power {itemPowerProtoRef.GetName()} to avatar {this}");
-                            else
-                                Logger.Debug($"AssignItemPowers(): Assigned item power {itemPowerProtoRef.GetName()} to {this}");
                         }
                     }
                 }
@@ -1288,7 +1283,7 @@ namespace MHServerEmu.Games.Entities.Avatars
                 return false;
             }
 
-            Logger.Trace($"UseInteractableObject(): {this} => {interactableObject}");
+            //Logger.Trace($"UseInteractableObject(): {this} => {interactableObject}");
 
             var objectProto = interactableObject.WorldEntityPrototype;
             if (objectProto.PreInteractPower != PrototypeId.Invalid)
@@ -1446,8 +1441,6 @@ namespace MHServerEmu.Games.Entities.Avatars
                     Logger.Warn($"OnOtherEntityAddedToMyInventory(): Failed to assign item power {powerProtoRef.GetName()} to avatar {this}");
                     return;
                 }
-
-                Logger.Debug($"OnOtherEntityAddedToMyInventory(): Assigned item power {powerProtoRef.GetName()} to {this}");
             }
         }
 
@@ -1475,10 +1468,7 @@ namespace MHServerEmu.Games.Entities.Avatars
 
             // Unassign powers granted by equipped items
             if (item.GetPowerGranted(out PrototypeId powerProtoRef) && GetPower(powerProtoRef) != null)
-            {
                 UnassignPower(powerProtoRef);
-                Logger.Debug($"OnOtherEntityRemovedFromMyInventory(): Unassigned item power {powerProtoRef.GetName()} from {this}");
-            }
         }
 
         public bool ChangeCostume(PrototypeId costumeProtoRef)

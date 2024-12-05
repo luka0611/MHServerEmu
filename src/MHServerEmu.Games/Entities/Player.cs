@@ -1323,9 +1323,7 @@ namespace MHServerEmu.Games.Entities
                 return playerMaxAvatarLevel >= serverBonusUnlockLevelOverride;
 
             // NOTE: ServerBonusUnlockLevel is set to 60 in 1.52.
-            // TODO: Uncomment the real check when we no longer need to rely on live tuning for balancing rewards.
-            //return playerMaxAvatarLevel >= GameDatabase.GlobalsPrototype.ServerBonusUnlockLevel;
-            return true;
+            return playerMaxAvatarLevel >= GameDatabase.GlobalsPrototype.ServerBonusUnlockLevel;
         }
 
         #endregion
@@ -1644,7 +1642,7 @@ namespace MHServerEmu.Games.Entities
 
         public override string ToString()
         {
-            return $"{base.ToString()}, dbGuid=0x{DatabaseUniqueId:X}";
+            return $"{GetName()} (entityId={Id}, dbGuid=0x{DatabaseUniqueId:X})";
         }
 
         protected override void BuildString(StringBuilder sb)
@@ -1705,8 +1703,6 @@ namespace MHServerEmu.Games.Entities
         public void SetGameplayOptions(NetMessageSetPlayerGameplayOptions clientOptions)
         {
             GameplayOptions newOptions = new(clientOptions.OptionsData);
-            Logger.Debug(newOptions.ToString());
-
             _gameplayOptions = newOptions;
 
             // TODO: Process new options

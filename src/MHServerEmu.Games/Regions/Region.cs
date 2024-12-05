@@ -721,8 +721,6 @@ namespace MHServerEmu.Games.Regions
             foreach (Player player in new PlayerIterator(this))
                 player.DiscoverEntity(worldEntity, updateInterest);
 
-            Logger.Trace($"DiscoverEntity(): {worldEntity}");
-
             return true;
         }
 
@@ -735,8 +733,6 @@ namespace MHServerEmu.Games.Regions
 
             foreach (Player player in new PlayerIterator(this))
                 player.UndiscoverEntity(worldEntity, updateInterest);
-
-            Logger.Trace($"UndiscoverEntity(): {worldEntity}");
 
             return true;
         }
@@ -1550,12 +1546,21 @@ namespace MHServerEmu.Games.Regions
             if (IsFirstLoaded) return;
             IsFirstLoaded = true;
 
-            foreach (var kvp in Properties.IteratePropertyRange(PropertyEnum.ScoringEventTimerStartTimeMS))                
-                if (kvp.Value == -1) 
+            List<PrototypeId> timerRefList = ListPool<PrototypeId>.Instance.Rent();
+
+            foreach (var kvp in Properties.IteratePropertyRange(PropertyEnum.ScoringEventTimerStartTimeMS))
+            {
+                if (kvp.Value == -1)
                 {
                     Property.FromParam(kvp.Key, 0, out PrototypeId timerRef);
-                    ScoringEventTimerStart(timerRef);
+                    timerRefList.Add(timerRef);
                 }
+            }
+
+            foreach (PrototypeId timerRef in timerRefList)
+                ScoringEventTimerStart(timerRef);
+
+            ListPool<PrototypeId>.Instance.Return(timerRefList);
         }
 
         public IEnumerable<PlayerConnection> GetInterestedClients(AOINetworkPolicyValues interestPolicies)

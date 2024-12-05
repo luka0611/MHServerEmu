@@ -8,15 +8,13 @@ using MHServerEmu.Frontend;
 using MHServerEmu.Games;
 using MHServerEmu.Games.Entities;
 using MHServerEmu.Games.Entities.Avatars;
-using MHServerEmu.Games.Events;
-using MHServerEmu.Games.Events.Templates;
 using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.MetaGames;
 using MHServerEmu.Games.Missions;
 using MHServerEmu.Games.Navi;
 using MHServerEmu.Games.Network;
+using MHServerEmu.Games.Populations;
 using MHServerEmu.Grouping;
-using System.Reflection.Metadata.Ecma335;
 
 namespace MHServerEmu.Commands.Implementations
 {
@@ -98,6 +96,17 @@ namespace MHServerEmu.Commands.Implementations
         {
             Off,
             On
+        }
+
+        [Command("spawn", "Usage: debug spawn [on|off].", AccountUserLevel.Admin)]
+        public string Spawn(string[] @params, FrontendClient client)
+        {
+            if ((@params.Length > 0 && Enum.TryParse(@params[0], true, out Switch flags)) == false)
+                flags = Switch.Off;   // Default Off
+
+            PopulationManager.Debug = (flags == Switch.On) ? true : false;
+
+            return $"Spawn Log [{flags}]";
         }
 
         [Command("mission", "Usage: debug mission [on|off].", AccountUserLevel.Admin)]
@@ -262,37 +271,6 @@ namespace MHServerEmu.Commands.Implementations
         {
             if (client != null) return "You can only invoke this command from the server console.";
             throw new("Server crash invoked by a debug command.");
-        }
-
-        [Command("scheduletestevent", "Schedules a test event.", AccountUserLevel.Admin)]
-        public string ScheduleTestEvent(string[] @params, FrontendClient client)
-        {
-            if (client == null) return "You can only invoke this command from the game.";
-
-            CommandHelper.TryGetGame(client, out Game game);
-
-            TestEventClass test = new();
-            test.ScheduleEvent(game, client, string.Join(' ', @params));
-
-            return $"Test event scheduled";
-        }
-
-        private class TestEventClass
-        {
-            public class TestEvent : CallMethodEventParam2<TestEventClass, FrontendClient, string>
-                { protected override CallbackDelegate GetCallback() => (t, p1, p2) => t.EventCallback(p1, p2); }
-            private EventPointer<TestEvent> _testEvent = new();
-
-            public void ScheduleEvent(Game game, FrontendClient client, string message)
-            {
-                game.GameEventScheduler.ScheduleEvent(_testEvent, TimeSpan.FromSeconds(3));
-                _testEvent.Get().Initialize(this, client, message);
-            }
-
-            public void EventCallback(FrontendClient client, string message)
-            {
-                ChatHelper.SendMetagameMessage(client, message);
-            }
         }
     }
 }
