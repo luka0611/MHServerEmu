@@ -1,14 +1,13 @@
 name: Nightly Release (Windows x64)
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '15 7 * * *'
 
 jobs:
   build:
-
     runs-on: windows-latest
-
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET
