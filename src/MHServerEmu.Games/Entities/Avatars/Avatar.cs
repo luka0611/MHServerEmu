@@ -2800,11 +2800,11 @@ namespace MHServerEmu.Games.Entities.Avatars
 
         public void SelectTeamUpAgent(PrototypeId teamUpProtoRef)
         {
-            if (Game.GameOptions.TeamUpSystemEnabled == false) return;
+            if (Game.GameOptions.TeamUpSystemEnabled == false || IsInWorld == false) return;
 
             if (teamUpProtoRef == PrototypeId.Invalid || IsTeamUpAgentUnlocked(teamUpProtoRef) == false) return;
-            var teamUpRoto = GameDatabase.GetPrototype<WorldEntityPrototype>(teamUpProtoRef);
-            if (teamUpRoto.IsLiveTuningEnabled() == false) return;
+            var teamUpProto = GameDatabase.GetPrototype<WorldEntityPrototype>(teamUpProtoRef);
+            if (teamUpProto.IsLiveTuningEnabled() == false) return;
 
             Agent oldTeamUp = CurrentTeamUpAgent;
             if (oldTeamUp != null)
@@ -2891,7 +2891,7 @@ namespace MHServerEmu.Games.Entities.Avatars
             scheduler.CancelEvent(_dismissTeamUpAgentEvent);
 
             TimeSpan duration = Properties[PropertyEnum.AvatarTeamUpDuration];
-            if (duration > TimeSpan.Zero)
+            if (duration > TimeSpan.Zero && teamUp.IsPermanentTeamUpStyle() == false)
             {
                 TimeSpan startTime = Properties[PropertyEnum.AvatarTeamUpStartTime];
                 TimeSpan time = duration - (Game.CurrentTime - startTime);
@@ -3014,8 +3014,10 @@ namespace MHServerEmu.Games.Entities.Avatars
 
             bool oldStyle = teamUpAgent.IsPermanentTeamUpStyle();
             teamUpAgent.Properties[PropertyEnum.TeamUpStyle] = styleIndex;
+            bool newStyle = teamUpAgent.IsPermanentTeamUpStyle();
+            teamUpAgent.AssignTeamUpAgentPowers();
 
-            if (teamUpAgent.IsPermanentTeamUpStyle())
+            if (newStyle)
             {
                 scheduler.CancelEvent(_dismissTeamUpAgentEvent);
             }
@@ -3578,6 +3580,18 @@ namespace MHServerEmu.Games.Entities.Avatars
             }
 
             player.UpdateScoringEventContext();
+
+            var teamUpAgent = CurrentTeamUpAgent;
+            if (teamUpAgent != null)
+            {
+                if (teamUpAgent.IsLiveTuningEnabled)
+                {
+                    SetOwnerTeamUpAgent(teamUpAgent);
+                    teamUpAgent.ApplyTeamUpAffixesToAvatar(this);
+                }
+                else
+                    Properties.RemoveProperty(PropertyEnum.AvatarTeamUpAgent);
+            }
 
             base.OnEnteredWorld(settings);
 
